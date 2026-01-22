@@ -1,8 +1,9 @@
-## ponte-nova
 
 <div align="center">
 	<img width="320" src="resources/logo.png" title="Ponte Nova">
 </div>
+
+## ponte-nova
 
 > Bridging the gap between Nova and Node.js
 
