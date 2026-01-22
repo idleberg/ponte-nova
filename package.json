@@ -1,13 +1,12 @@
 {
-	"name": "@idleberg/node-package-template",
+	"name": "ponte-nova",
 	"version": "0.0.0",
-	"private": true,
-	"description": "Just my personal package template",
+	"description": "Bridging the gap between Nova and Node.js",
 	"license": "MIT",
 	"author": "Jan T. Sott",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/idleberg/node-package-template.git"
+		"url": "git+https://github.com/idleberg/ponte-nova.git"
 	},
 	"keywords": [],
 	"type": "module",

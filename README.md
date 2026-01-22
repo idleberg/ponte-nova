@@ -1,19 +1,21 @@
-# node-package-template
+## ponte-nova
 
-> Just my personal package template.
+<div align="center">
+	<img width="320" src="resources/logo.png" title="Ponte Nova">
+</div>
 
-[![License](https://img.shields.io/github/license/idleberg/node-package-template?color=blue&style=for-the-badge)](https://github.com/idleberg/node-package-template/blob/main/LICENSE)
-[![Version: npm](https://img.shields.io/npm/v/@idleberg/node-package-template?style=for-the-badge)](https://www.npmjs.org/package/@idleberg/node-package-template)
-![GitHub branch check runs](https://img.shields.io/github/check-runs/idleberg/node-package-template/main?style=for-the-badge)
+> Bridging the gap between Nova and Node.js
 
-A template with highly opinionated configuration. Works for me, maybe not for you!
+[![License](https://img.shields.io/github/license/idleberg/ponte-nova?color=blue&style=for-the-badge)](https://github.com/idleberg/ponte-nova/blob/main/LICENSE)
+[![Version: npm](https://img.shields.io/npm/v/ponte-nova?style=for-the-badge)](https://www.npmjs.org/package/ponte-nova)
+![GitHub branch check runs](https://img.shields.io/github/check-runs/idleberg/ponte-nova/main?style=for-the-badge)
 
 ## Installation 💿
 
 In GitHub, click on *"Use this template"* to create a new repo from this template. Alternatively, you can use `degitly`.
 
 ```shell
-npx degitly idleberg/node-package-template
+npm install ponte-nova
 ```
 
 ## Usage 🚀
