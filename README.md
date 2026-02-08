@@ -1,9 +1,8 @@
-
 <div align="center">
 	<img width="320" src="resources/logo.png" title="Ponte Nova">
 </div>
 
-## ponte-nova
+# ponte-nova
 
 > Bridging the gap between Nova and Node.js
 
@@ -13,15 +12,71 @@
 
 ## Installation 💿
 
-In GitHub, click on *"Use this template"* to create a new repo from this template. Alternatively, you can use `degitly`.
-
 ```shell
 npm install ponte-nova
 ```
 
 ## Usage 🚀
 
-That's the one thing you have to figure out!
+The plugin can be used with any bundler compatible with the Rollup plugin API. See the following examples for the most popular ones:
+
+<details>
+<summary><strong>Rollup</strong></summary>
+
+```ts
+import { ponteNova } from 'ponte-nova';
+
+export default {
+	input: 'src/main.ts',
+	plugins: [
+		ponteNova(),
+	],
+	output: {
+		file: 'extension.js',
+		format: 'cjs',
+	},
+};
+```
+</details>
+
+<details>
+<summary><strong>Vite</strong></summary>
+
+```ts
+import { defineConfig } from 'vite'
+import { ponteNova } from 'ponte-nova';
+
+export default defineConfig({
+	build: {
+    lib: {
+      entry: ['src/main.ts'],
+			fileName: 'extension',
+      formats: ['cjs'],
+    },
+  },
+	plugins: [
+		ponteNova(),
+	],
+})
+```
+</details>
+
+<details>
+<summary><strong>tsdown</strong></summary>
+
+```ts
+import { defineConfig } from 'tsdown'
+import { ponteNova } from 'ponte-nova';
+
+export default defineConfig({
+	entry: ['src/main.ts'],
+	format: 'cjs',
+	plugins: [
+		ponteNova(),
+	],
+})
+```
+</details>
 
 ## License ©️
 
