@@ -52,7 +52,7 @@
 		"prepare": "lefthook install",
 		"publish:jsr": "deno publish",
 		"publish:npm": "np --any-branch",
-		"test": "vitest run"
+		"test": "#vitest run"
 	},
 	"dependencies": {
 		"@rollup/plugin-alias": "^6.0.0",
