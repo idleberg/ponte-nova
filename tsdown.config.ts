@@ -7,7 +7,7 @@ export default defineConfig((options) => {
 		target: 'node20',
 		clean: isProduction,
 		dts: isProduction,
-		entry: 'src/index.ts',
+		entry: ['src/api/*', 'src/plugin.ts'],
 		format: 'esm',
 		minify: isProduction,
 		platform: 'node',
