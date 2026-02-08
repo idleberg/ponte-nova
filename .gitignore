@@ -13,3 +13,4 @@ test-results/
 # Project specific
 app.js
 test.ts
+playground/
