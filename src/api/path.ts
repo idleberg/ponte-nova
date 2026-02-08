@@ -262,34 +262,34 @@ export const win32 = {
 		throw new Error('win32 paths not supported in Nova');
 	},
 	resolve: () => {
-		throw new Error('win32 paths not supported in Nova');
+		throw new Error('Win32 paths not supported in Nova');
 	},
 	dirname: () => {
-		throw new Error('win32 paths not supported in Nova');
+		throw new Error('Win32 paths not supported in Nova');
 	},
 	basename: () => {
-		throw new Error('win32 paths not supported in Nova');
+		throw new Error('Win32 paths not supported in Nova');
 	},
 	extname: () => {
-		throw new Error('win32 paths not supported in Nova');
+		throw new Error('Win32 paths not supported in Nova');
 	},
 	normalize: () => {
-		throw new Error('win32 paths not supported in Nova');
+		throw new Error('Win32 paths not supported in Nova');
 	},
 	isAbsolute: () => {
-		throw new Error('win32 paths not supported in Nova');
+		throw new Error('Win32 paths not supported in Nova');
 	},
 	parse: () => {
-		throw new Error('win32 paths not supported in Nova');
+		throw new Error('Win32 paths not supported in Nova');
 	},
 	format: () => {
-		throw new Error('win32 paths not supported in Nova');
+		throw new Error('Win32 paths not supported in Nova');
 	},
 	relative: () => {
-		throw new Error('win32 paths not supported in Nova');
+		throw new Error('Win32 paths not supported in Nova');
 	},
 	toNamespacedPath: () => {
-		throw new Error('win32 paths not supported in Nova');
+		throw new Error('Win32 paths not supported in Nova');
 	},
 };
 

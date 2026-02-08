@@ -1239,10 +1239,7 @@ export function write(
 	}
 }
 
-// ============================================================================
 // Unsupported Methods (Throw helpful errors)
-// ============================================================================
-
 const unsupportedError = (method: string, reason: string) => () => {
 	throw new Error(`fs.${method} is not supported in Nova extensions. ${reason}`);
 };
