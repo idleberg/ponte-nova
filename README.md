@@ -20,7 +20,7 @@ NodeJS provides a rich eco-system of packages, many of them useful when developi
 
 This package provides a Rollup plugin that transforms your code to achieve that. However, the full NodeJS API cannot be covered and some methods have their own caveats. I would love to get feedback from extension developers to improve it, please see the [known issues](#known-issues-) below.
 
-**Features**
+**Supported Built-ins**
 
 - `node:fs`
 - `node:fs/promises`
