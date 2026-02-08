@@ -35,7 +35,7 @@ npm install ponte-nova
 
 ## Usage 🚀
 
-The plugin can be used with any bundler compatible with the [Rollup](https://rollupjs.org/) plugin API, including [Vite](https://vite.dev/), [Rolldown](https://rolldown.rs/), [Farm](https://farm-fe.github.io/) and others.
+The plugin can be used with any bundler supporting the [Rollup](https://rollupjs.org/) plugin API, including [Vite](https://vite.dev/), [Rolldown](https://rolldown.rs/), [Farm](https://farm-fe.github.io/) and others.
 
 <details>
 <summary><strong>Rollup</strong></summary>
