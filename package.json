@@ -32,6 +32,10 @@
 		"./fs/promises": {
 			"types": "./dist/api/fs-promises.d.mts",
 			"import": "./dist/api/fs-promises.mjs"
+		},
+		"./os": {
+			"types": "./dist/api/os.d.mts",
+			"import": "./dist/api/os.mjs"
 		}
 	},
 	"engines": {
