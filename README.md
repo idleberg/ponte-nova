@@ -58,12 +58,12 @@ import ponteNova from 'ponte-nova';
 
 export default defineConfig({
 	build: {
-    lib: {
-      entry: ['src/main.ts'],
+		lib: {
+			entry: ['src/main.ts'],
 			fileName: 'extension',
-      formats: ['cjs'],
-    },
-  },
+			formats: ['cjs'],
+		},
+	},
 	plugins: [
 		ponteNova(),
 	],
