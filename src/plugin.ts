@@ -37,6 +37,7 @@ export default function ponteNova(
 	const builtinAliases = [
 		{ find: /^(?:node:)?fs\/promises$/, replacement: `${apiPath}/fs-promises.mjs` },
 		{ find: /^(?:node:)?fs$/, replacement: `${apiPath}/fs.mjs` },
+		{ find: /^(?:node:)?os$/, replacement: `${apiPath}/os.mjs` },
 		{ find: /^(?:node:)?path$/, replacement: `${apiPath}/path.mjs` },
 	];
 
