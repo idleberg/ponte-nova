@@ -18,8 +18,8 @@
 	"type": "module",
 	"exports": {
 		".": {
-			"types": "./dist/index.d.mts",
-			"import": "./dist/index.mjs"
+			"types": "./dist/plugin.d.mts",
+			"import": "./dist/plugin.mjs"
 		},
 		"./path": {
 			"types": "./dist/api/path.d.mts",
