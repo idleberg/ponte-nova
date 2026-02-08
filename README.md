@@ -34,7 +34,7 @@ The plugin can be used with any bundler compatible with the [Rollup](https://rol
 <summary><strong>Rollup</strong></summary>
 
 ```ts
-import { ponteNova } from 'ponte-nova';
+import ponteNova from 'ponte-nova';
 
 export default {
 	input: 'src/main.ts',
@@ -54,7 +54,7 @@ export default {
 
 ```ts
 import { defineConfig } from 'vite'
-import { ponteNova } from 'ponte-nova';
+import ponteNova from 'ponte-nova';
 
 export default defineConfig({
 	build: {
@@ -67,7 +67,7 @@ export default defineConfig({
 	plugins: [
 		ponteNova(),
 	],
-})
+});
 ```
 </details>
 
@@ -76,7 +76,7 @@ export default defineConfig({
 
 ```ts
 import { defineConfig } from 'tsdown'
-import { ponteNova } from 'ponte-nova';
+import ponteNova from 'ponte-nova';
 
 export default defineConfig({
 	entry: ['src/main.ts'],
@@ -84,7 +84,7 @@ export default defineConfig({
 	plugins: [
 		ponteNova(),
 	],
-})
+});
 ```
 </details>
 
