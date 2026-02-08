@@ -88,15 +88,21 @@ export default defineConfig({
 
 ## Known Issues 🐞
 
+> [!NOTE]
+>
+> I'd like to go into dialog with extension developers about some of the decisions described below. You are welcome to challenge this decision by opening an [issue](issues).
+
 ### Base Directory
 
-In NodeJS, methods such as `path.resolve` or `fs.mkdir` use `process.cwd()` to determine the base directory. In Ponte Nova, we use `nova.extension.path` instead. You are welcome to challenge this decision by opening an issue.
+In NodeJS, methods such as `path.resolve` or `fs.mkdir` use `process.cwd()` to determine a base directory. In Ponte Nova, we use `nova.extension.path` instead.
 
 ### Unsupported Path methods
 
-Since Nova is Macintosh-only, all methods in `path.win32` are not supported. You are welcome to challenge this decision by opening an issue.
+Since Nova is Macintosh-only, all methods in `path.win32` are not supported.
 
 ### Unsupported FileSystem methods
+
+Due to limitations of the Nova Extension API, the following `node:fs` methods are currently not supported:
 
 `chmod`, `chmodSync`, `chown`, `chownSync`, `createReadStream`, `createWriteStream`, `fchmod`, `fchmodSync`, `fchown`, `fchownSync`, `fdatasync`, `fdatasyncSync`, `fstat`, `fstatSync`, `fsync`, `fsyncSync`, `ftruncate`, `ftruncateSync`, `futimes`, `futimesSync`, `lchmod`, `lchmodSync`, `lchown`, `lchownSync`, `link`, `linkSync`, `lutimes`, `lutimesSync`, `readlink`, `readlinkSync`, `symlink`, `symlinkSync`, `truncate`, `truncateSync`, `unwatchFile`, `utimes`, `utimesSync`, `watch`, `watchFile`
 
