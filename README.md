@@ -14,7 +14,7 @@
 
 NodeJS provides a rich eco-system of packages, many of them useful when developing extensions for [Nova](https://nova.app/), the text-editor by Panic. However, NodeJS and the Nova API aren't fully compatible. Packages supporting `node:fs` or `node:path` will not work in Nova. Ponte Nova tries to change that by mapping NodeJS builtins to their Nova counterpart.
 
-This package provides a Rollup plugin that transforms your code to achieve that. However, the full NodeJS API cannot be covered and some methods have their own caveats. While this package might not be production-ready, I hope to get some feedback from the Nova community to improve it.
+This package provides a Rollup plugin that transforms your code to achieve that. However, the full NodeJS API cannot be covered and some methods have their own caveats. While this package might not be production-ready, I hope to get some feedback from extension developers to improve it.
 
 Please get in touch!
 
