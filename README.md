@@ -4,7 +4,7 @@
 
 # ponte-nova
 
-> Bridging the gap between Nova and Node.js
+> Bridging the gap between Node.js and Nova
 
 [![License](https://img.shields.io/github/license/idleberg/ponte-nova?color=blue&style=for-the-badge)](https://github.com/idleberg/ponte-nova/blob/main/LICENSE)
 [![Version: npm](https://img.shields.io/npm/v/ponte-nova?style=for-the-badge)](https://www.npmjs.org/package/ponte-nova)

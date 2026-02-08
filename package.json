@@ -1,7 +1,7 @@
 {
 	"name": "ponte-nova",
 	"version": "0.0.0",
-	"description": "Bridging the gap between Nova and Node.js",
+	"description": "Bridging the gap between Node.js and Nova",
 	"license": "MIT",
 	"author": "Jan T. Sott",
 	"repository": {
