@@ -35,14 +35,9 @@ export default function ponteNova(
 	const apiPath = path.resolve(__dirname, './api');
 
 	const builtinAliases = [
-		{ find: /^fs\/promises$/, replacement: `${apiPath}/fs-promises.mjs` },
-		{ find: /^node:fs\/promises$/, replacement: `${apiPath}/fs-promises.mjs` },
-
-		{ find: /^fs$/, replacement: `${apiPath}/fs.mjs` },
-		{ find: /^node:fs$/, replacement: `${apiPath}/fs.mjs` },
-
-		{ find: /^path$/, replacement: `${apiPath}/path.mjs` },
-		{ find: /^node:path$/, replacement: `${apiPath}/path.mjs` },
+		{ find: /^(?:node:)?fs\/promises$/, replacement: `${apiPath}/fs-promises.mjs` },
+		{ find: /^(?:node:)?fs$/, replacement: `${apiPath}/fs.mjs` },
+		{ find: /^(?:node:)?path$/, replacement: `${apiPath}/path.mjs` },
 	];
 
 	const plugins: Plugin[] = [];
