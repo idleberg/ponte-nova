@@ -15,30 +15,31 @@
  * @returns The command output, trimmed
  */
 function execSync(command: string): string {
-	try {
-		const process = new Process('/usr/bin/env', {
-			args: ['sh', '-c', command],
-			shell: true,
-		});
+	// try {
+	const process = new Process('/usr/bin/env', {
+		args: ['sh', '-c', command],
+		shell: true,
+	});
 
-		let output = '';
-		process.onStdout((line) => {
-			output += line;
-		});
+	let output = '';
 
-		process.start();
+	process.onStdout((line) => {
+		output += line;
+	});
 
-		// Wait for process to complete (with timeout)
-		let attempts = 0;
-		while (process.pid && attempts < 100) {
-			// Process is still running, wait a bit
-			attempts++;
-		}
+	process.start();
 
-		return output.trim();
-	} catch {
-		return '';
+	// Wait for process to complete (with timeout)
+	let attempts = 0;
+	while (process.pid && attempts < 100) {
+		// Process is still running, wait a bit
+		attempts++;
 	}
+
+	return output.trim();
+	// } catch {
+	// 	return '';
+	// }
 }
 
 // ============================================================================
@@ -391,6 +392,7 @@ export function networkInterfaces(): Record<
  */
 export function loadavg(): [number, number, number] {
 	const loadavgStr = execSync('sysctl -n vm.loadavg');
+
 	if (!loadavgStr) {
 		return [0, 0, 0];
 	}

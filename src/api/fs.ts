@@ -303,6 +303,11 @@ export function lstatSync(path: string, options?: StatOptions): Stats {
 
 /**
  * Create directory
+ *
+ * Uses nova.fs.mkdir internally but implements recursive directory creation manually
+ * because Nova's mkdir doesn't support the recursive option. When recursive is true,
+ * this function walks up the path to find the first existing directory, then creates
+ * each missing directory in order.
  */
 export function mkdirSync(path: string, options?: MakeDirectoryOptions | Mode | null): void {
 	const resolvedPath = compatPath.resolve(path);
@@ -605,7 +610,11 @@ export function accessSync(path: string, mode: number = constants.F_OK): void {
 }
 
 /**
- * Resolve real path (Nova doesn't support symlinks, so just resolve to absolute path)
+ * Resolve real path
+ *
+ * Returns the resolved absolute path. Nova doesn't expose symlink resolution APIs,
+ * so this simply returns the normalized absolute path without following symlinks.
+ * This differs from Node.js which would resolve symlinks to their target.
  */
 export function realpathSync(path: string, _options?: ObjectEncodingOptions | BufferEncoding | null): string {
 	return compatPath.resolve(path);
@@ -613,7 +622,10 @@ export function realpathSync(path: string, _options?: ObjectEncodingOptions | Bu
 
 /**
  * Create temporary directory
- * Creates temp directories in /tmp to match Node.js behavior
+ *
+ * Custom implementation because Nova doesn't provide a mkdtemp equivalent.
+ * Creates directories under /tmp/.ponte-nova/ with a random suffix appended
+ * to the prefix to match Node.js mkdtemp behavior.
  */
 export function mkdtempSync(prefix: string, _options?: ObjectEncodingOptions | BufferEncoding | null): string {
 	const randomSuffix = Math.random().toString(36).substring(2, 8);

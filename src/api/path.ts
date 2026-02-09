@@ -11,7 +11,13 @@ export const delimiter = ':';
 
 /**
  * Join path segments
- * Node.js normalizes the result and filters out empty strings
+ *
+ * Uses nova.path.join internally but adds pre-processing to match Node.js behavior:
+ * - Filters out empty strings and null/undefined values before joining
+ * - Returns '.' when no valid paths are provided
+ *
+ * Nova's join doesn't filter these values, which would produce different results
+ * for edge cases like join('', 'foo') or join().
  */
 export function join(...paths: string[]): string {
 	// Filter out empty strings and undefined/null values like Node.js does
@@ -28,10 +34,14 @@ export function join(...paths: string[]): string {
 
 /**
  * Resolve path segments to an absolute path
- * Node.js resolves from left to right, stopping when an absolute path is constructed
  *
- * Uses nova.extension.path as the base for relative paths, making paths resolve
- * from the extension bundle (similar to how Node.js modules resolve from their location)
+ * Custom implementation because Node.js and Nova have different resolution semantics:
+ * - Node.js resolves right-to-left until an absolute path is found, then uses cwd as base
+ * - This implementation uses nova.extension.path as the base instead of cwd, which is
+ *   more appropriate for extension code (similar to how Node.js modules resolve from
+ *   their location)
+ *
+ * Uses nova.path.isAbsolute and nova.path.normalize internally.
  */
 export function resolve(...paths: string[]): string {
 	if (paths.length === 0) {
@@ -66,6 +76,14 @@ export function resolve(...paths: string[]): string {
 
 /**
  * Get the directory name of a path
+ *
+ * Custom implementation instead of nova.path.dirname to match Node.js edge case behavior:
+ * - Returns '.' for empty string or '.' input (Nova may differ)
+ * - Strips trailing slashes before processing (e.g., '/foo/bar/' → '/foo')
+ * - Returns '/' for root-only paths
+ *
+ * These edge cases ensure compatibility with Node.js code that relies on specific
+ * dirname behavior for path manipulation.
  */
 export function dirname(path: string): string {
 	// Handle edge cases
@@ -101,6 +119,10 @@ export function dirname(path: string): string {
 
 /**
  * Get the last portion of a path (filename)
+ *
+ * Uses nova.path.basename internally but adds Node.js-specific behavior:
+ * - Strips trailing slashes before processing (Node.js behavior)
+ * - Supports optional extension removal (nova.path.basename doesn't accept ext parameter)
  */
 export function basename(path: string, ext?: string): string {
 	// Remove trailing slashes first (Node.js behavior)
@@ -122,6 +144,14 @@ export function basename(path: string, ext?: string): string {
 
 /**
  * Get the extension of a path
+ *
+ * Custom implementation instead of nova.path.extname to match Node.js edge case behavior:
+ * - Returns '' for dotfiles without extensions (e.g., '.gitignore' → '')
+ * - Returns '' for paths ending with a dot at position 0 (e.g., '.' or '..')
+ * - Only considers the last dot in the basename, not in directory components
+ *
+ * Nova's extname may handle these edge cases differently, which would break
+ * Node.js code that depends on specific extension parsing rules.
  */
 export function extname(path: string): string {
 	// Get the basename first
