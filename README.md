@@ -25,6 +25,7 @@ This package provides a Rollup plugin that transforms your code to achieve that.
 **Supported Built-ins**
 
 - `node:buffer`
+- `node:child_process`
 - `node:crypto`
 - `node:fs`
 - `node:fs/promises`
@@ -151,6 +152,18 @@ The rest is worth knowing about:
 - `getuid`, `getgid` and `umask` are **absent** rather than stubbed, so that `typeof process.getuid === 'function'` gives the honest answer. A stub reporting uid 0 would tell a package it is running as root.
 - `hrtime` is derived from `Date.now`, so it is accurate to the millisecond and no further.
 - `abort`, `kill`, `binding` and `dlopen` throw.
+
+### Child processes
+
+`spawn`, `exec` and `execFile` run on Nova's Process API and behave as expected: events, piped `stdout`/`stderr`, a writable `stdin`, `cwd`, `env`, `timeout`, `maxBuffer`, `AbortSignal`, and the promisified forms of `exec` and `execFile`.
+
+The synchronous family cannot exist. Nova reports output and exit status through callbacks and JavaScript cannot block until they arrive, so `execSync`, `execFileSync` and `spawnSync` throw and point at their asynchronous counterparts. `fork` throws too, since there is no NodeJS runtime to fork into.
+
+Three smaller differences:
+
+- Nova delivers output a line at a time rather than as a byte stream, so output that ended without a trailing newline gains one. Chunk boundaries always fall on newlines.
+- `stdio` is accepted and ignored. Every child is piped; Nova offers no equivalent of `inherit` or `ignore`, and none of `detached`, IPC or `child.send()`.
+- A command without a slash in it is launched through `/usr/bin/env`, which performs the `PATH` lookup that NodeJS does internally and Nova does not.
 
 ### Approximated FileSystem errors
 

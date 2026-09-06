@@ -25,6 +25,10 @@
 			"types": "./dist/api/buffer.d.mts",
 			"import": "./dist/api/buffer.mjs"
 		},
+		"./child_process": {
+			"types": "./dist/api/child_process.d.mts",
+			"import": "./dist/api/child_process.mjs"
+		},
 		"./crypto": {
 			"types": "./dist/api/crypto.d.mts",
 			"import": "./dist/api/crypto.mjs"
