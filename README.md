@@ -24,6 +24,7 @@ This package provides a Rollup plugin that transforms your code to achieve that.
 
 **Supported Built-ins**
 
+- `node:crypto`
 - `node:fs`
 - `node:fs/promises`
 - `node:os`
@@ -110,6 +111,14 @@ In NodeJS, methods such as `path.resolve` or `fs.mkdir` use `process.cwd()` to d
 ### Unsupported Path methods
 
 Since Nova is Macintosh-only, all methods in `path.win32` are not supported.
+
+### Unsupported Crypto methods
+
+Nova's crypto API only provides `getRandomValues` and `randomUUID`, so only random data generation is supported. Everything else throws:
+
+`createCipher`, `createCipheriv`, `createDecipher`, `createDecipheriv`, `createDiffieHellman`, `createHash`, `createHmac`, `createSign`, `createVerify`, `generateKeyPair`, `generateKeyPairSync`, `pbkdf2`, `pbkdf2Sync`, `scrypt`, `scryptSync`
+
+Note that hashing is the most common reason packages import `node:crypto`, so many of them will remain incompatible.
 
 ### Unsupported FileSystem methods
 

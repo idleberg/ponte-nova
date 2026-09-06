@@ -21,6 +21,10 @@
 			"types": "./dist/plugin.d.mts",
 			"import": "./dist/plugin.mjs"
 		},
+		"./crypto": {
+			"types": "./dist/api/crypto.d.mts",
+			"import": "./dist/api/crypto.mjs"
+		},
 		"./path": {
 			"types": "./dist/api/path.d.mts",
 			"import": "./dist/api/path.mjs"
