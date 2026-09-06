@@ -12,38 +12,7 @@
  * crypto-dependent packages will still not work.
  */
 
-// ============================================================================
-// Types
-// ============================================================================
-
-/**
- * Simple Buffer-like class for compatibility
- *
- * Nova doesn't have Node.js Buffer, so we create a minimal implementation that
- * extends Uint8Array with the encoding methods (toString with 'hex', 'base64', 'utf8')
- * that Node.js code commonly uses. This allows randomBytes() to return a Buffer-like
- * object that works with existing Node.js code patterns.
- */
-export class BufferCompat extends Uint8Array {
-	override toString(encoding = 'utf8'): string {
-		if (encoding === 'hex') {
-			return Array.from(this, (byte) => byte.toString(16).padStart(2, '0')).join('');
-		}
-
-		if (encoding === 'base64') {
-			// Nova provides btoa, which expects one character per byte
-			return btoa(Array.from(this, (byte) => String.fromCharCode(byte)).join(''));
-		}
-
-		// TextDecoder is not part of the documented Nova API, so its absence is
-		// reported rather than silently substituting a different encoding
-		if (typeof TextDecoder === 'undefined') {
-			throw new Error(`Encoding '${encoding}' is not supported in Nova extensions. Use 'hex' or 'base64' instead.`);
-		}
-
-		return new TextDecoder(encoding).decode(this);
-	}
-}
+import { Buffer } from './buffer.js';
 
 // ============================================================================
 // Random Number Generation
@@ -52,21 +21,19 @@ export class BufferCompat extends Uint8Array {
 /**
  * Generates cryptographically strong random data
  *
- * Uses nova.crypto.getRandomValues internally but returns a BufferCompat instance
- * instead of a raw Uint8Array. This is because Node.js returns a Buffer object with
- * methods like toString('hex') and toString('base64') that code may rely on. Nova
- * doesn't have Node's Buffer class, so BufferCompat provides a minimal compatible
- * implementation.
+ * Uses nova.crypto.getRandomValues internally but returns a Buffer rather than a
+ * raw Uint8Array, because Node.js code routinely calls toString('hex') on the
+ * result.
  *
  * @param size - The number of bytes to generate
- * @returns BufferCompat containing random bytes (extends Uint8Array with toString encoding support)
+ * @returns Buffer containing random bytes
  */
-export function randomBytes(size: number): BufferCompat {
+export function randomBytes(size: number): Buffer {
 	if (size < 0 || !Number.isInteger(size)) {
 		throw new RangeError('The "size" argument must be a non-negative integer');
 	}
 
-	return nova.crypto.getRandomValues(new BufferCompat(size));
+	return nova.crypto.getRandomValues(Buffer.alloc(size));
 }
 
 /**

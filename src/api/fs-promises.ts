@@ -15,6 +15,7 @@ import type {
 	StatOptions,
 	Stats,
 } from 'node:fs';
+import type { Buffer } from './buffer.js';
 import {
 	accessSync,
 	appendFileSync,
@@ -46,7 +47,16 @@ export { constants };
 // Promise-based Methods
 // ============================================================================
 
-export function readFile(path: string, options?: ObjectEncodingOptions | BufferEncoding | null): Promise<string> {
+export function readFile(path: string, options?: null): Promise<Buffer>;
+export function readFile(path: string, options: ObjectEncodingOptions | BufferEncoding): Promise<string>;
+export function readFile(
+	path: string,
+	options?: ObjectEncodingOptions | BufferEncoding | null,
+): Promise<string | Buffer>;
+export function readFile(
+	path: string,
+	options?: ObjectEncodingOptions | BufferEncoding | null,
+): Promise<string | Buffer> {
 	return Promise.resolve(readFileSync(path, options));
 }
 
@@ -168,7 +178,7 @@ class FileHandle {
 		}));
 	}
 
-	readFile(options?: ObjectEncodingOptions | BufferEncoding | null): Promise<string> {
+	readFile(options?: ObjectEncodingOptions | BufferEncoding | null): Promise<string | Buffer> {
 		return readFile(this.path, options);
 	}
 

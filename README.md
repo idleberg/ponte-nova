@@ -24,6 +24,7 @@ This package provides a Rollup plugin that transforms your code to achieve that.
 
 **Supported Built-ins**
 
+- `node:buffer`
 - `node:crypto`
 - `node:fs`
 - `node:fs/promises`
@@ -108,6 +109,10 @@ export default defineConfig({
 
 In NodeJS, methods such as `path.resolve` or `fs.mkdir` use `process.cwd()` to determine a base directory. In Ponte Nova, we use `nova.extension.path` instead.
 
+### Reading files without an encoding
+
+As in NodeJS, `fs.readFileSync(path)` without an encoding returns a `Buffer`, and only `fs.readFileSync(path, 'utf8')` returns a string. Earlier versions returned a string in both cases.
+
 ### Unsupported Path methods
 
 Since Nova is Macintosh-only, all methods in `path.win32` are not supported.
@@ -119,6 +124,15 @@ Nova's crypto API only provides `getRandomValues` and `randomUUID`, so only rand
 `createCipher`, `createCipheriv`, `createDecipher`, `createDecipheriv`, `createDiffieHellman`, `createHash`, `createHmac`, `createSign`, `createVerify`, `generateKeyPair`, `generateKeyPairSync`, `pbkdf2`, `pbkdf2Sync`, `scrypt`, `scryptSync`
 
 Note that hashing is the most common reason packages import `node:crypto`, so many of them will remain incompatible.
+
+### Buffer
+
+`Buffer` is a global in Node.js, so packages use it without importing it. Nova has no such global, and the plugin therefore rewrites every `Buffer` reference into an import of the bundled implementation. Importing `node:buffer` explicitly works too.
+
+The implementation extends `Uint8Array`, as it does in Node.js, and covers all eight encodings, the numeric accessors, and the usual static helpers. Two details differ:
+
+- `allocUnsafe` zero-fills, because there is no uninitialised allocation available. That is slower than Node.js, never less safe.
+- Decoding malformed UTF-8 produces `U+FFFD`, but not necessarily the same number of them as Node.js. Well-formed input always round-trips.
 
 ### Approximated FileSystem errors
 

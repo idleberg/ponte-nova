@@ -2,6 +2,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import alias from '@rollup/plugin-alias';
 import commonjs from '@rollup/plugin-commonjs';
+import inject from '@rollup/plugin-inject';
 import { nodeResolve } from '@rollup/plugin-node-resolve';
 import { consola } from 'consola';
 import type { Plugin } from 'rollup';
@@ -35,6 +36,7 @@ export default function ponteNova(
 	const apiPath = path.resolve(__dirname, './api');
 
 	const builtinAliases = [
+		{ find: /^(?:node:)?buffer$/, replacement: `${apiPath}/buffer.mjs` },
 		{ find: /^(?:node:)?crypto$/, replacement: `${apiPath}/crypto.mjs` },
 		{ find: /^(?:node:)?fs\/promises$/, replacement: `${apiPath}/fs-promises.mjs` },
 		{ find: /^(?:node:)?fs$/, replacement: `${apiPath}/fs.mjs` },
@@ -70,6 +72,16 @@ export default function ponteNova(
 	plugins.push(
 		alias({
 			entries: [...builtinAliases, ...(options.customAliases || [])],
+		}),
+	);
+
+	// Buffer is a global in Node.js, so packages use it without importing it.
+	// Nova has no such global, which means every reference has to be rewritten
+	// into an import of the shim.
+	plugins.push(
+		// @ts-expect-error - @rollup/plugin-inject has mismatched ESM/type definitions with verbatimModuleSyntax
+		inject({
+			Buffer: [`${apiPath}/buffer.mjs`, 'Buffer'],
 		}),
 	);
 

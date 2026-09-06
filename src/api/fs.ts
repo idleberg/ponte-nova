@@ -15,6 +15,7 @@ import type {
 	StatOptions,
 	Stats,
 } from 'node:fs';
+import { Buffer } from './buffer.js';
 import * as compatPath from './path.js';
 
 // Extended error type for file system operations with dest property
@@ -165,34 +166,6 @@ function classify(path: string, syscall: string, writing = false): FileSystemErr
 }
 
 /**
- * Encode a string as UTF-8 bytes
- *
- * Nova has no TextEncoder, but readSync and writeSync deal in bytes while
- * Nova's text-mode files deal in strings, so the conversion has to happen
- * somewhere. Encoding by hand also keeps the byte counts these functions
- * return honest for non-ASCII content.
- */
-function encodeUtf8(value: string): Uint8Array {
-	const bytes: number[] = [];
-
-	for (const character of value) {
-		const code = character.codePointAt(0) as number;
-
-		if (code < 0x80) {
-			bytes.push(code);
-		} else if (code < 0x800) {
-			bytes.push(0xc0 | (code >> 6), 0x80 | (code & 0x3f));
-		} else if (code < 0x10000) {
-			bytes.push(0xe0 | (code >> 12), 0x80 | ((code >> 6) & 0x3f), 0x80 | (code & 0x3f));
-		} else {
-			bytes.push(0xf0 | (code >> 18), 0x80 | ((code >> 12) & 0x3f), 0x80 | ((code >> 6) & 0x3f), 0x80 | (code & 0x3f));
-		}
-	}
-
-	return Uint8Array.from(bytes);
-}
-
-/**
  * Convert Nova FileStats to Node.js Stats object
  */
 function convertStats(novaStats: FileStats): Stats {
@@ -232,12 +205,15 @@ function convertStats(novaStats: FileStats): Stats {
 
 /**
  * Normalize encoding option
+ *
+ * Returns null when no encoding was given, which is Node.js asking for a
+ * Buffer rather than a string
  */
-function getEncoding(options?: string | ObjectEncodingOptions | null): string {
-	if (!options) return 'utf8';
+function getEncoding(options?: string | ObjectEncodingOptions | null): string | null {
+	if (!options) return null;
 	if (typeof options === 'string') return options;
 
-	return options.encoding || 'utf8';
+	return options.encoding || null;
 }
 
 /**
@@ -273,22 +249,32 @@ export function existsSync(path: string): boolean {
 
 /**
  * Read entire file
+ *
+ * Without an encoding, Node.js hands back a Buffer, which is what packages
+ * reading binary files expect. That case is served by opening the file in
+ * Nova's binary mode; an encoding opens it in text mode as before.
  */
-export function readFileSync(path: string, options?: ObjectEncodingOptions | BufferEncoding | null): string {
+export function readFileSync(path: string, options?: null): Buffer;
+export function readFileSync(path: string, options: ObjectEncodingOptions | BufferEncoding): string;
+export function readFileSync(path: string, options?: ObjectEncodingOptions | BufferEncoding | null): string | Buffer;
+export function readFileSync(path: string, options?: ObjectEncodingOptions | BufferEncoding | null): string | Buffer {
 	const resolvedPath = compatPath.resolve(path);
 	const encoding = getEncoding(options);
 
 	try {
+		if (encoding === null) {
+			const file = nova.fs.open(resolvedPath, 'rb') as FileBinaryMode;
+			const content = file.read();
+
+			file.close();
+
+			return content ? Buffer.from(content) : Buffer.alloc(0);
+		}
+
 		const file = nova.fs.open(resolvedPath, 'r', encoding as Encoding) as FileTextMode;
 		const content = file.read();
 
 		file.close();
-
-		// If encoding is null/buffer, we'd need to return a buffer
-		// Nova returns strings, so we'll just return the string
-		if (encoding === null || encoding === 'buffer') {
-			console.warn('Buffer encoding not fully supported in Nova, returning string');
-		}
 
 		return content ?? '';
 	} catch {
@@ -304,17 +290,7 @@ export function writeFileSync(
 	data: string | NodeJS.ArrayBufferView,
 	options?: ObjectEncodingOptions | BufferEncoding | null,
 ): void {
-	const resolvedPath = compatPath.resolve(path);
-	const encoding = getEncoding(options);
-
-	try {
-		const file = nova.fs.open(resolvedPath, 'w', encoding as Encoding) as FileTextMode;
-
-		file.write(String(data), encoding as Encoding);
-		file.close();
-	} catch {
-		throw classify(path, 'open', true);
-	}
+	writeOrAppend(path, data, options, 'w');
 }
 
 /**
@@ -325,13 +301,38 @@ export function appendFileSync(
 	data: string | NodeJS.ArrayBufferView,
 	options?: ObjectEncodingOptions | BufferEncoding | null,
 ): void {
+	writeOrAppend(path, data, options, 'a');
+}
+
+/**
+ * Shared body of writeFileSync and appendFileSync
+ *
+ * Binary data is written through Nova's binary mode rather than being coerced
+ * to a string, which used to turn a Uint8Array into its comma-separated digits.
+ */
+function writeOrAppend(
+	path: string,
+	data: string | NodeJS.ArrayBufferView,
+	options: ObjectEncodingOptions | BufferEncoding | null | undefined,
+	mode: 'a' | 'w',
+): void {
 	const resolvedPath = compatPath.resolve(path);
 	const encoding = getEncoding(options);
 
 	try {
-		const file = nova.fs.open(resolvedPath, 'a', encoding as Encoding) as FileTextMode;
+		if (typeof data === 'string') {
+			const file = nova.fs.open(resolvedPath, mode, (encoding ?? 'utf8') as Encoding) as FileTextMode;
 
-		file.write(String(data), encoding as Encoding);
+			file.write(data, (encoding ?? 'utf8') as Encoding);
+			file.close();
+
+			return;
+		}
+
+		const file = nova.fs.open(resolvedPath, `${mode}b`) as FileBinaryMode;
+		const bytes = new Uint8Array(data.buffer, data.byteOffset, data.byteLength);
+
+		file.write(bytes.slice().buffer as ArrayBuffer);
 		file.close();
 	} catch {
 		throw classify(path, 'open', true);
@@ -736,7 +737,7 @@ export function readSync(
 		return 0;
 	}
 
-	const bytes = typeof content === 'string' ? encodeUtf8(content) : new Uint8Array(content);
+	const bytes = typeof content === 'string' ? Buffer.from(content, 'utf8') : new Uint8Array(content);
 	const bytesRead = target ? Math.min(bytes.length, target.length - start) : bytes.length;
 
 	target?.set(bytes.subarray(0, bytesRead), start);
@@ -771,7 +772,7 @@ export function writeSync(
 		fd.write(buffer);
 
 		// Node.js counts bytes written, which is not the string length
-		return encodeUtf8(buffer).length;
+		return Buffer.byteLength(buffer, 'utf8');
 	}
 
 	const bytes = new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
@@ -796,25 +797,32 @@ export function writeSync(
 // Async Methods (Callback-based)
 // ============================================================================
 
-export function readFile(path: string, callback: (err: NodeJS.ErrnoException | null, data?: string) => void): void;
 export function readFile(
 	path: string,
-	options: ObjectEncodingOptions | BufferEncoding | null,
-	callback: (err: NodeJS.ErrnoException | null, data?: string) => void,
+	callback: (err: NodeJS.ErrnoException | null, data?: string | Buffer) => void,
 ): void;
 export function readFile(
 	path: string,
-	options: ObjectEncodingOptions | BufferEncoding | null | ((err: NodeJS.ErrnoException | null, data?: string) => void),
-	callback?: (err: NodeJS.ErrnoException | null, data?: string) => void,
+	options: ObjectEncodingOptions | BufferEncoding | null,
+	callback: (err: NodeJS.ErrnoException | null, data?: string | Buffer) => void,
+): void;
+export function readFile(
+	path: string,
+	options:
+		| ObjectEncodingOptions
+		| BufferEncoding
+		| null
+		| ((err: NodeJS.ErrnoException | null, data?: string | Buffer) => void),
+	callback?: (err: NodeJS.ErrnoException | null, data?: string | Buffer) => void,
 ): void {
-	let cb: (err: NodeJS.ErrnoException | null, data?: string) => void;
+	let cb: (err: NodeJS.ErrnoException | null, data?: string | Buffer) => void;
 	let opts: ObjectEncodingOptions | BufferEncoding | null;
 
 	if (typeof options === 'function') {
 		cb = options;
 		opts = null;
 	} else {
-		cb = callback as (err: NodeJS.ErrnoException | null, data?: string) => void;
+		cb = callback as (err: NodeJS.ErrnoException | null, data?: string | Buffer) => void;
 		opts = options;
 	}
 
