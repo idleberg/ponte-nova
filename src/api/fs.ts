@@ -175,17 +175,12 @@ function getNovaMode(flags?: OpenMode): string {
 
 /**
  * Check if file exists
+ *
+ * Note that nova.fs.access returns a boolean rather than throwing, unlike its
+ * Node.js counterpart.
  */
 export function existsSync(path: string): boolean {
-	const resolvedPath = compatPath.resolve(path);
-
-	try {
-		nova.fs.access(resolvedPath, constants.F_OK);
-
-		return true;
-	} catch {
-		return false;
-	}
+	return nova.fs.access(compatPath.resolve(path), constants.F_OK);
 }
 
 /**
@@ -604,21 +599,31 @@ export function cpSync(src: string, dest: string, options?: CopyOptions): void {
 
 /**
  * Test file permissions
+ *
+ * nova.fs.access returns a boolean rather than throwing, so the Node.js error
+ * is constructed here. The requested mode is tested against F_OK first to tell
+ * a missing file (ENOENT) apart from an inaccessible one (EACCES).
  */
 export function accessSync(path: string, mode: number = constants.F_OK): void {
 	const resolvedPath = compatPath.resolve(path);
 
-	try {
-		nova.fs.access(resolvedPath, mode);
-	} catch {
-		const error = new Error(`ENOENT: no such file or directory, access '${path}'`) as NodeJS.ErrnoException;
-
-		error.code = 'ENOENT';
-		error.errno = -2;
-		error.path = path;
-
-		throw error;
+	if (nova.fs.access(resolvedPath, mode)) {
+		return;
 	}
+
+	const exists = nova.fs.access(resolvedPath, constants.F_OK);
+
+	const error = (
+		exists
+			? new Error(`EACCES: permission denied, access '${path}'`)
+			: new Error(`ENOENT: no such file or directory, access '${path}'`)
+	) as NodeJS.ErrnoException;
+
+	error.code = exists ? 'EACCES' : 'ENOENT';
+	error.errno = exists ? -13 : -2;
+	error.path = path;
+
+	throw error;
 }
 
 /**
