@@ -9,7 +9,8 @@
  * describe the machine rather than its current state (arch, hostname, cpus,
  * total memory, boot time) don't change between extension activations, so they
  * are persisted to disk and read back synchronously on the next launch. A
- * background refresh keeps that file current.
+ * background refresh, started the first time any of these values is read,
+ * keeps that file current.
  *
  * The consequence is a cold start: on the very first activation - before the
  * file exists - these methods return the fallbacks defined below. Values that
@@ -86,7 +87,26 @@ function writeCache(info: SystemInfo): void {
 	}
 }
 
-const cache = readCache();
+let refreshRequested = false;
+
+/**
+ * Cached system information, refreshed the first time any of it is read
+ *
+ * The refresh costs a subprocess, so it is deferred until something actually
+ * asks for a value rather than run at import. That matters because the process
+ * shim imports this module for arch alone, and an extension that only reads
+ * process.env should not be spawning a shell.
+ */
+const cache = new Proxy(readCache(), {
+	get(target, key: string) {
+		if (!refreshRequested) {
+			refreshRequested = true;
+			refreshCache();
+		}
+
+		return target[key as keyof SystemInfo];
+	},
+});
 
 /**
  * Collect system information in a single subprocess
@@ -170,8 +190,6 @@ async function refreshCache(): Promise<void> {
 
 	writeCache(cache);
 }
-
-refreshCache();
 
 // ============================================================================
 // Constants

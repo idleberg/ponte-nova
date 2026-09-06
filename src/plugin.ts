@@ -42,6 +42,7 @@ export default function ponteNova(
 		{ find: /^(?:node:)?fs$/, replacement: `${apiPath}/fs.mjs` },
 		{ find: /^(?:node:)?os$/, replacement: `${apiPath}/os.mjs` },
 		{ find: /^(?:node:)?path$/, replacement: `${apiPath}/path.mjs` },
+		{ find: /^(?:node:)?process$/, replacement: `${apiPath}/process.mjs` },
 	];
 
 	const plugins: Plugin[] = [];
@@ -75,13 +76,14 @@ export default function ponteNova(
 		}),
 	);
 
-	// Buffer is a global in Node.js, so packages use it without importing it.
-	// Nova has no such global, which means every reference has to be rewritten
-	// into an import of the shim.
+	// Buffer and process are globals in Node.js, so packages use them without
+	// importing anything. Nova has no such globals, which means every reference
+	// has to be rewritten into an import of the corresponding shim.
 	plugins.push(
 		// @ts-expect-error - @rollup/plugin-inject has mismatched ESM/type definitions with verbatimModuleSyntax
 		inject({
 			Buffer: [`${apiPath}/buffer.mjs`, 'Buffer'],
+			process: [`${apiPath}/process.mjs`, 'default'],
 		}),
 	);
 

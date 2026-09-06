@@ -30,6 +30,7 @@ This package provides a Rollup plugin that transforms your code to achieve that.
 - `node:fs/promises`
 - `node:os`
 - `node:path`
+- `node:process`
 
 ## Installation 💿
 
@@ -107,7 +108,7 @@ export default defineConfig({
 
 ### Base Directory
 
-In NodeJS, methods such as `path.resolve` or `fs.mkdir` use `process.cwd()` to determine a base directory. In Ponte Nova, we use `nova.extension.path` instead.
+In NodeJS, methods such as `path.resolve` or `fs.mkdir` use `process.cwd()` to determine a base directory. In Ponte Nova, we start from `nova.extension.path` instead. `process.cwd()` reports that same directory, and `process.chdir()` moves it for `path` and `fs` too.
 
 ### Reading files without an encoding
 
@@ -125,14 +126,31 @@ Nova's crypto API only provides `getRandomValues` and `randomUUID`, so only rand
 
 Note that hashing is the most common reason packages import `node:crypto`, so many of them will remain incompatible.
 
+### Globals
+
+`Buffer` and `process` are globals in NodeJS, so packages use them without importing anything. Nova has no such globals, and the plugin therefore rewrites every reference into an import of the corresponding shim. Importing `node:buffer` or `node:process` explicitly works too.
+
 ### Buffer
 
-`Buffer` is a global in Node.js, so packages use it without importing it. Nova has no such global, and the plugin therefore rewrites every `Buffer` reference into an import of the bundled implementation. Importing `node:buffer` explicitly works too.
-
-The implementation extends `Uint8Array`, as it does in Node.js, and covers all eight encodings, the numeric accessors, and the usual static helpers. Two details differ:
+The implementation extends `Uint8Array`, as it does in NodeJS, and covers all eight encodings, the numeric accessors, and the usual static helpers. Two details differ:
 
 - `allocUnsafe` zero-fills, because there is no uninitialised allocation available. That is slower than Node.js, never less safe.
 - Decoding malformed UTF-8 produces `U+FFFD`, but not necessarily the same number of them as Node.js. Well-formed input always round-trips.
+
+### Process
+
+An extension runs inside the editor rather than as a standalone program, so parts of `process` have nothing to describe. What maps onto Nova works properly: `env` reads `nova.environment`, `cwd` and `chdir` share their directory with `path` and `fs`, `nextTick` uses the microtask queue, and `stdout`/`stderr` write whole lines to the console.
+
+The rest is worth knowing about:
+
+- `process.exit()` **throws**, because an extension cannot terminate the editor. It stops execution where NodeJS would have, rather than letting code that assumed it was unreachable keep running.
+- `process.version` reports `v20.0.0`. No NodeJS runtime is involved, so this is a fiction, but packages parse it to pick a feature set and an empty value makes them fail outright.
+- `process.env` is a mutable copy. Assignments are visible to the rest of the extension and to nothing else — not the editor, not a subprocess.
+- `process.pid` is invented at load, so code using it to build unique names still gets uniqueness.
+- `on('exit')` and friends are accepted and stored, but nothing ever emits them.
+- `getuid`, `getgid` and `umask` are **absent** rather than stubbed, so that `typeof process.getuid === 'function'` gives the honest answer. A stub reporting uid 0 would tell a package it is running as root.
+- `hrtime` is derived from `Date.now`, so it is accurate to the millisecond and no further.
+- `abort`, `kill`, `binding` and `dlopen` throw.
 
 ### Approximated FileSystem errors
 

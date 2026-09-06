@@ -44,6 +44,10 @@
 		"./os": {
 			"types": "./dist/api/os.d.mts",
 			"import": "./dist/api/os.mjs"
+		},
+		"./process": {
+			"types": "./dist/api/process.d.mts",
+			"import": "./dist/api/process.mjs"
 		}
 	},
 	"engines": {

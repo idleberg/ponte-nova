@@ -37,15 +37,36 @@ export function join(...paths: string[]): string {
  *
  * Custom implementation because Node.js and Nova have different resolution semantics:
  * - Node.js resolves right-to-left until an absolute path is found, then uses cwd as base
- * - This implementation uses nova.extension.path as the base instead of cwd, which is
- *   more appropriate for extension code (similar to how Node.js modules resolve from
- *   their location)
+ * - This implementation starts from nova.extension.path rather than a process working
+ *   directory, which is more appropriate for extension code (similar to how Node.js
+ *   modules resolve from their location). process.chdir moves it, see cwd below.
  *
  * Uses nova.path.isAbsolute and nova.path.normalize internally.
  */
+let workingDirectory: string | null = null;
+
+/**
+ * Base directory that relative paths resolve against
+ *
+ * Not part of the Node.js path API. It lives here rather than in the process
+ * shim because this is the module that consumes it, and it is exported so that
+ * process.cwd and process.chdir can read and write the same value instead of
+ * tracking a second one that would drift.
+ */
+export function cwd(): string {
+	return workingDirectory ?? nova.extension.path ?? '/';
+}
+
+/**
+ * Change the base directory that relative paths resolve against
+ */
+export function chdir(directory: string): void {
+	workingDirectory = resolve(directory);
+}
+
 export function resolve(...paths: string[]): string {
 	if (paths.length === 0) {
-		return nova.extension.path || '/';
+		return cwd();
 	}
 
 	// Process paths from right to left until we get an absolute path
@@ -65,9 +86,9 @@ export function resolve(...paths: string[]): string {
 		resolvedAbsolute = nova.path.isAbsolute(resolvedPath);
 	}
 
-	// If still not absolute, prepend the extension path
+	// If still not absolute, prepend the working directory
 	if (!resolvedAbsolute) {
-		resolvedPath = `${nova.extension.path || '/'}/${resolvedPath}`;
+		resolvedPath = `${cwd()}/${resolvedPath}`;
 	}
 
 	// Normalize and return
