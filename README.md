@@ -12,7 +12,7 @@
 
 ## Description 🤓
 
-**/ˈpõtʃi ˈnɔvɐ/** – *”new bridge”*
+**/ˈpõtʃi ˈnɔvɐ/** – _”new bridge”_
 
 > [!IMPORTANT]
 >
@@ -47,59 +47,64 @@ The plugin can be used with any bundler supporting the [Rollup](https://rollupjs
 <summary><strong>Rollup</strong></summary>
 
 ```ts
-import ponteNova from 'ponte-nova';
+import ponteNova from "ponte-nova";
 
 export default {
-	input: 'src/main.ts',
-	plugins: [
-		ponteNova(),
-	],
-	output: {
-		file: 'extension.js',
-		format: 'cjs',
-	},
+  input: "src/main.ts",
+  plugins: [ponteNova()],
+  output: {
+    file: "extension.js",
+    format: "cjs",
+  },
 };
 ```
+
 </details>
 
 <details>
 <summary><strong>Vite</strong></summary>
 
 ```ts
-import { defineConfig } from 'vite'
-import ponteNova from 'ponte-nova';
+import { defineConfig } from "vite";
+import ponteNova from "ponte-nova";
 
 export default defineConfig({
-	build: {
-		lib: {
-			entry: ['src/main.ts'],
-			fileName: 'extension',
-			formats: ['cjs'],
-		},
-	},
-	plugins: [
-		ponteNova(),
-	],
+  build: {
+    lib: {
+      entry: ["src/main.ts"],
+      fileName: "extension",
+      formats: ["cjs"],
+    },
+  },
+  plugins: [ponteNova()],
 });
 ```
+
 </details>
 
 <details>
 <summary><strong>tsdown</strong></summary>
 
 ```ts
-import { defineConfig } from 'tsdown'
-import ponteNova from 'ponte-nova';
+import { defineConfig } from "tsdown";
+import ponteNova from "ponte-nova";
 
 export default defineConfig({
-	entry: ['src/main.ts'],
-	format: 'cjs',
-	plugins: [
-		ponteNova(),
-	],
+  entry: ["src/main.ts"],
+  format: "cjs",
+  plugins: [ponteNova()],
 });
 ```
+
 </details>
+
+### Options
+
+| Option            | Type                                                     | Default | Description                                                                                   |
+| ----------------- | -------------------------------------------------------- | ------- | --------------------------------------------------------------------------------------------- |
+| `customAliases`   | `Array<{ find: string \| RegExp; replacement: string }>` | `[]`    | Applied before the built-in aliases, so an entry here overrides the shim for that module.     |
+| `skipCommonJS`    | `boolean`                                                | `false` | Skips `@rollup/plugin-commonjs`, which you then have to add yourself, before this plugin.     |
+| `skipNodeResolve` | `boolean`                                                | `false` | Skips `@rollup/plugin-node-resolve`, which you then have to add yourself, before this plugin. |
 
 ## Known Issues 🐞
 

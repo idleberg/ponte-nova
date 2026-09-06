@@ -52,10 +52,11 @@
 		"./process": {
 			"types": "./dist/api/process.d.mts",
 			"import": "./dist/api/process.mjs"
-		}
+		},
+		"./package.json": "./package.json"
 	},
 	"engines": {
-		"node": ">=20"
+		"node": ">=20.19"
 	},
 	"files": [
 		"dist/",
@@ -69,7 +70,6 @@
 		"lint:biome": "biome check",
 		"lint:e18e": "e18e-cli analyze",
 		"prepack": "npm run build",
-		"publish:jsr": "deno publish",
 		"publish:npm": "np --any-branch",
 		"test": "#vitest run"
 	},
@@ -95,7 +95,7 @@
 		"vitest": "^4.0.18"
 	},
 	"peerDependencies": {
-		"rollup": "^2.0.0 || ^3.0.0 || ^4.0.0"
+		"rollup": "^4.0.0"
 	},
 	"peerDependenciesMeta": {
 		"rollup": {

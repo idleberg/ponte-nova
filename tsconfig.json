@@ -1,5 +1,6 @@
 {
 	"extends": "@idleberg/configs/tsc",
+	"include": ["src"],
 	"compilerOptions": {
 		"module": "NodeNext",
 		"moduleResolution": "NodeNext",

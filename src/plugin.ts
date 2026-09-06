@@ -9,10 +9,13 @@ import type { Plugin } from 'rollup';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-interface PonteNovaOptions {
+export interface PonteNovaOptions {
+	/** Aliases applied before the built-in ones, so they can override them */
 	customAliases?: Array<{ find: string | RegExp; replacement: string }>;
-	skipCommonJS: boolean;
-	skipNodeResolve: boolean;
+	/** Skips using @rollup/plugin-commonjs (not recommended) */
+	skipCommonJS?: boolean;
+	/** Skips using @rollup/plugin-node-resolve (not recommended) */
+	skipNodeResolve?: boolean;
 }
 
 /**
@@ -22,17 +25,9 @@ interface PonteNovaOptions {
  * Nova-compatible implementations.
  *
  * @param options - Plugin options
- * @param options.customAliases - Additional aliases to apply
- * @param options.skipCommonJS - Skips using @rollup/plugin-commonjs (not recommended)
- * @param options.skipNodeResolve - Skips using @rollup/plugin-node-resolve (not recommended)
  * @returns Array of Rollup plugins
  */
-export default function ponteNova(
-	options: PonteNovaOptions = {
-		skipCommonJS: false,
-		skipNodeResolve: false,
-	},
-): Plugin[] {
+export default function ponteNova(options: PonteNovaOptions = {}): Plugin[] {
 	const apiPath = path.resolve(__dirname, './api');
 
 	const builtinAliases = [
@@ -70,10 +65,11 @@ export default function ponteNova(
 		plugins.push(commonjs());
 	}
 
-	// Apply aliases
+	// Custom aliases come first: the first matching entry wins, so this is what
+	// lets a caller point a built-in at their own implementation instead
 	plugins.push(
 		alias({
-			entries: [...builtinAliases, ...(options.customAliases || [])],
+			entries: [...(options.customAliases ?? []), ...builtinAliases],
 		}),
 	);
 
@@ -83,6 +79,8 @@ export default function ponteNova(
 	plugins.push(
 		// @ts-expect-error - @rollup/plugin-inject has mismatched ESM/type definitions with verbatimModuleSyntax
 		inject({
+			// The shims must not be rewritten to import themselves
+			exclude: `${apiPath}/**`,
 			Buffer: [`${apiPath}/buffer.mjs`, 'Buffer'],
 			process: [`${apiPath}/process.mjs`, 'default'],
 		}),
