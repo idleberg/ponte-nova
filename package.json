@@ -37,6 +37,10 @@
 			"types": "./dist/api/events.d.mts",
 			"import": "./dist/api/events.mjs"
 		},
+		"./url": {
+			"types": "./dist/api/url.d.mts",
+			"import": "./dist/api/url.mjs"
+		},
 		"./util": {
 			"types": "./dist/api/util.d.mts",
 			"import": "./dist/api/util.mjs"

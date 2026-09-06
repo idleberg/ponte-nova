@@ -40,6 +40,7 @@ export default function ponteNova(options: PonteNovaOptions = {}): Plugin[] {
 		{ find: /^(?:node:)?os$/, replacement: `${apiPath}/os.mjs` },
 		{ find: /^(?:node:)?path$/, replacement: `${apiPath}/path.mjs` },
 		{ find: /^(?:node:)?process$/, replacement: `${apiPath}/process.mjs` },
+		{ find: /^(?:node:)?url$/, replacement: `${apiPath}/url.mjs` },
 		{ find: /^(?:node:)?util$/, replacement: `${apiPath}/util.mjs` },
 	];
 
@@ -75,15 +76,18 @@ export default function ponteNova(options: PonteNovaOptions = {}): Plugin[] {
 		}),
 	);
 
-	// Buffer and process are globals in Node.js, so packages use them without
-	// importing anything. Nova has no such globals, which means every reference
-	// has to be rewritten into an import of the corresponding shim.
+	// Buffer, process, URL and URLSearchParams are globals in Node.js, so
+	// packages use them without importing anything. Nova has no such globals,
+	// which means every reference has to be rewritten into an import of the
+	// corresponding shim.
 	plugins.push(
 		// @ts-expect-error - @rollup/plugin-inject has mismatched ESM/type definitions with verbatimModuleSyntax
 		inject({
 			// The shims must not be rewritten to import themselves
 			exclude: `${apiPath}/**`,
 			Buffer: [`${apiPath}/buffer.mjs`, 'Buffer'],
+			URL: [`${apiPath}/url.mjs`, 'URL'],
+			URLSearchParams: [`${apiPath}/url.mjs`, 'URLSearchParams'],
 			process: [`${apiPath}/process.mjs`, 'default'],
 		}),
 	);

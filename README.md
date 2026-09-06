@@ -33,6 +33,7 @@ This package provides a Rollup plugin that transforms your code to achieve that.
 - `node:os`
 - `node:path`
 - `node:process`
+- `node:url`
 - `node:util`
 
 ## Installation 💿
@@ -154,7 +155,7 @@ Ciphers, key derivation and signing have no counterpart here and throw:
 
 ### Globals
 
-`Buffer` and `process` are globals in NodeJS, so packages use them without importing anything. Nova has no such globals, and the plugin therefore rewrites every reference into an import of the corresponding shim. Importing `node:buffer` or `node:process` explicitly works too.
+`Buffer`, `process`, `URL` and `URLSearchParams` are globals in NodeJS, so packages use them without importing anything. Nova has no such globals, and the plugin therefore rewrites every reference into an import of the corresponding shim. Importing `node:buffer`, `node:process` or `node:url` explicitly works too.
 
 ### Buffer
 
@@ -203,6 +204,17 @@ The shims use it themselves — a child process and its streams are emitters.
 `TextEncoder` and `TextDecoder` live here too. JavaScriptCore provides neither, so they are built on the Buffer shim; `TextDecoder` handles UTF-8 only and throws for any other encoding rather than mis-decoding silently.
 
 `inspect` is the one deliberate approximation. It covers the shapes that turn up in log output — objects, arrays, `Map`, `Set`, typed arrays, dates, regular expressions, circular references, depth limiting and the `inspect.custom` symbol — but it breaks lines at its own discretion, and shows a promise only as `<pending>`, because a promise's state cannot be read synchronously.
+
+### URL
+
+`URL` and `URLSearchParams` are web platform APIs rather than language ones, so JavaScriptCore has neither and both are implemented here from the WHATWG algorithm: parsing, relative resolution against a base, percent-encoding, the property setters, and a `searchParams` that writes back to the URL it came from. The legacy `url.parse`, `url.format` and `url.resolve` are a separate, more permissive parser, as they are in Node.js — `url.parse('/just/a/path')` has to keep working rather than throw. `fileURLToPath`, `pathToFileURL` and `urlToHttpOptions` are all present.
+
+Both are globals in Node.js, so the plugin injects them the way it injects `Buffer` and `process`.
+
+Two things are approximated, and both concern host names only:
+
+- Internationalised domains are not punycoded. An ASCII host is handled properly; a non-ASCII one is passed through lowercased instead, and `domainToASCII` reports failure for it. The Unicode mapping tables that IDNA needs are larger than the rest of this package put together.
+- `http://0x7f.1/` keeps its host as written where Node.js would report `127.0.0.1`.
 
 ### Approximated FileSystem errors
 
