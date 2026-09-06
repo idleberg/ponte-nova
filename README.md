@@ -27,11 +27,13 @@ This package provides a Rollup plugin that transforms your code to achieve that.
 - `node:buffer`
 - `node:child_process`
 - `node:crypto`
+- `node:events`
 - `node:fs`
 - `node:fs/promises`
 - `node:os`
 - `node:path`
 - `node:process`
+- `node:util`
 
 ## Installation 💿
 
@@ -187,6 +189,20 @@ Three smaller differences:
 - Nova delivers output a line at a time rather than as a byte stream, so output that ended without a trailing newline gains one. Chunk boundaries always fall on newlines.
 - `stdio` is accepted and ignored. Every child is piped; Nova offers no equivalent of `inherit` or `ignore`, and none of `detached`, IPC or `child.send()`.
 - A command without a slash in it is launched through `/usr/bin/env`, which performs the `PATH` lookup that NodeJS does internally and Nova does not.
+
+### Events
+
+`EventEmitter` is plain JavaScript rather than anything Nova provides, so this is a real implementation and not an approximation: listener order, `once` unsubscribing before it fires, `prependListener`, `listeners` versus `rawListeners`, the `newListener` event, and an unhandled `'error'` throwing all behave as they do in NodeJS. `events.once(emitter, name)` returns a promise, rejecting if the emitter errors first.
+
+The shims use it themselves — a child process and its streams are emitters.
+
+### Util
+
+`promisify` (including the `promisify.custom` protocol, which is how `promisify(exec)` returns a child process), `callbackify`, `inherits`, `format`, `isDeepStrictEqual`, `types.*`, `deprecate` and `debuglog` are all present and checked against NodeJS.
+
+`TextEncoder` and `TextDecoder` live here too. JavaScriptCore provides neither, so they are built on the Buffer shim; `TextDecoder` handles UTF-8 only and throws for any other encoding rather than mis-decoding silently.
+
+`inspect` is the one deliberate approximation. It covers the shapes that turn up in log output — objects, arrays, `Map`, `Set`, typed arrays, dates, regular expressions, circular references, depth limiting and the `inspect.custom` symbol — but it breaks lines at its own discretion, and shows a promise only as `<pending>`, because a promise's state cannot be read synchronously.
 
 ### Approximated FileSystem errors
 

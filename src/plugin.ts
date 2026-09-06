@@ -34,11 +34,13 @@ export default function ponteNova(options: PonteNovaOptions = {}): Plugin[] {
 		{ find: /^(?:node:)?buffer$/, replacement: `${apiPath}/buffer.mjs` },
 		{ find: /^(?:node:)?child_process$/, replacement: `${apiPath}/child_process.mjs` },
 		{ find: /^(?:node:)?crypto$/, replacement: `${apiPath}/crypto.mjs` },
+		{ find: /^(?:node:)?events$/, replacement: `${apiPath}/events.mjs` },
 		{ find: /^(?:node:)?fs\/promises$/, replacement: `${apiPath}/fs-promises.mjs` },
 		{ find: /^(?:node:)?fs$/, replacement: `${apiPath}/fs.mjs` },
 		{ find: /^(?:node:)?os$/, replacement: `${apiPath}/os.mjs` },
 		{ find: /^(?:node:)?path$/, replacement: `${apiPath}/path.mjs` },
 		{ find: /^(?:node:)?process$/, replacement: `${apiPath}/process.mjs` },
+		{ find: /^(?:node:)?util$/, replacement: `${apiPath}/util.mjs` },
 	];
 
 	const plugins: Plugin[] = [];

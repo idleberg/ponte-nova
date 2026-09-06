@@ -12,79 +12,10 @@
  */
 
 import { Buffer } from './buffer.js';
+import { EventEmitter } from './events.js';
 import { cwd } from './path.js';
 
-// ============================================================================
-// Events
-// ============================================================================
-
 type Listener = (...args: never[]) => void;
-
-/**
- * The slice of EventEmitter that a child process actually needs
- *
- * Nova has no events module and this shim only ever emits a handful of names,
- * so implementing the whole EventEmitter contract would be dead weight.
- */
-class Emitter {
-	#listeners = new Map<string, Listener[]>();
-
-	on(event: string, listener: Listener): this {
-		this.#listeners.set(event, [...(this.#listeners.get(event) ?? []), listener]);
-
-		return this;
-	}
-
-	addListener(event: string, listener: Listener): this {
-		return this.on(event, listener);
-	}
-
-	once(event: string, listener: Listener): this {
-		const wrapped = ((...args: never[]) => {
-			this.off(event, wrapped);
-			listener(...args);
-		}) as Listener;
-
-		return this.on(event, wrapped);
-	}
-
-	off(event: string, listener: Listener): this {
-		this.#listeners.set(
-			event,
-			(this.#listeners.get(event) ?? []).filter((candidate) => candidate !== listener),
-		);
-
-		return this;
-	}
-
-	removeListener(event: string, listener: Listener): this {
-		return this.off(event, listener);
-	}
-
-	removeAllListeners(event?: string): this {
-		if (event === undefined) {
-			this.#listeners.clear();
-		} else {
-			this.#listeners.delete(event);
-		}
-
-		return this;
-	}
-
-	listenerCount(event: string): number {
-		return (this.#listeners.get(event) ?? []).length;
-	}
-
-	emit(event: string, ...args: unknown[]): boolean {
-		const registered = [...(this.#listeners.get(event) ?? [])];
-
-		for (const listener of registered) {
-			(listener as (...args: unknown[]) => void)(...args);
-		}
-
-		return registered.length > 0;
-	}
-}
 
 // ============================================================================
 // Streams
@@ -96,7 +27,7 @@ class Emitter {
  * Emits 'data' with a Buffer, or with a string once setEncoding has been
  * called, which is the pair of behaviours Node.js code branches on.
  */
-class ReadableStream extends Emitter {
+class ReadableStream extends EventEmitter {
 	readable = true;
 	#encoding: BufferEncoding | null = null;
 
@@ -146,7 +77,7 @@ class ReadableStream extends Emitter {
  * ordering survives, and a failure surfaces as an 'error' event rather than an
  * unhandled rejection.
  */
-class WritableStream extends Emitter {
+class WritableStream extends EventEmitter {
 	writable = true;
 	#writer: WritableStreamDefaultWriter<string> | null = null;
 	#queue: Promise<unknown> = Promise.resolve();
@@ -262,7 +193,7 @@ function resolveCommand(command: string, args: string[], shell?: boolean | strin
 	return command.includes('/') ? [command, args] : ['/usr/bin/env', [command, ...args]];
 }
 
-export class ChildProcess extends Emitter {
+export class ChildProcess extends EventEmitter {
 	stdout: ReadableStream | null = new ReadableStream();
 	stderr: ReadableStream | null = new ReadableStream();
 	stdin: WritableStream;

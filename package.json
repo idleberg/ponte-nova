@@ -33,6 +33,14 @@
 			"types": "./dist/api/crypto.d.mts",
 			"import": "./dist/api/crypto.mjs"
 		},
+		"./events": {
+			"types": "./dist/api/events.d.mts",
+			"import": "./dist/api/events.mjs"
+		},
+		"./util": {
+			"types": "./dist/api/util.d.mts",
+			"import": "./dist/api/util.mjs"
+		},
 		"./path": {
 			"types": "./dist/api/path.d.mts",
 			"import": "./dist/api/path.mjs"

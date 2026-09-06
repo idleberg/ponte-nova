@@ -9,6 +9,7 @@
  * placeholder or throws, and each case says which below.
  */
 
+import { EventEmitter } from './events.js';
 import { arch } from './os.js';
 import { cwd as getWorkingDirectory, chdir as setWorkingDirectory } from './path.js';
 
@@ -168,35 +169,31 @@ export const stdin = {
 // Events
 // ============================================================================
 
-const listeners = new Map<string, Array<(...args: unknown[]) => void>>();
+type Listener = (...args: never[]) => void;
 
 /**
- * Register a process event listener
+ * The process object's own event registry
  *
- * Nothing in the runtime emits 'exit', 'beforeExit' or 'uncaughtException',
- * so handlers for those are stored and never called. They are accepted anyway
+ * Nothing in the runtime emits 'exit', 'beforeExit' or 'uncaughtException', so
+ * handlers for those are stored and never called. They are accepted anyway
  * because packages register them on import and would otherwise fail to load.
  */
-export function on(event: string, listener: (...args: unknown[]) => void): typeof processExport {
-	listeners.set(event, [...(listeners.get(event) ?? []), listener]);
+const events = new EventEmitter();
+
+export function on(event: string, listener: Listener): typeof processExport {
+	events.on(event, listener);
 
 	return processExport;
 }
 
-export function once(event: string, listener: (...args: unknown[]) => void): typeof processExport {
-	const wrapped = (...args: unknown[]) => {
-		off(event, wrapped);
-		listener(...args);
-	};
+export function once(event: string, listener: Listener): typeof processExport {
+	events.once(event, listener);
 
-	return on(event, wrapped);
+	return processExport;
 }
 
-export function off(event: string, listener: (...args: unknown[]) => void): typeof processExport {
-	listeners.set(
-		event,
-		(listeners.get(event) ?? []).filter((candidate) => candidate !== listener),
-	);
+export function off(event: string, listener: Listener): typeof processExport {
+	events.off(event, listener);
 
 	return processExport;
 }
@@ -204,30 +201,31 @@ export function off(event: string, listener: (...args: unknown[]) => void): type
 export const removeListener = off;
 
 export function removeAllListeners(event?: string): typeof processExport {
-	if (event === undefined) {
-		listeners.clear();
-	} else {
-		listeners.delete(event);
-	}
+	events.removeAllListeners(event);
 
 	return processExport;
 }
 
 export function emit(event: string, ...args: unknown[]): boolean {
-	const registered = listeners.get(event) ?? [];
-
-	for (const listener of registered) {
-		listener(...args);
+	// Unlike an EventEmitter, an unhandled 'error' on process must not throw
+	if (event === 'error' && events.listenerCount('error') === 0) {
+		return false;
 	}
 
-	return registered.length > 0;
+	return events.emit(event, ...args);
 }
 
 export function listenerCount(event: string): number {
-	return (listeners.get(event) ?? []).length;
+	return events.listenerCount(event);
 }
 
-export function setMaxListeners(): typeof processExport {
+export function listeners(event: string): Listener[] {
+	return events.listeners(event);
+}
+
+export function setMaxListeners(count = 10): typeof processExport {
+	events.setMaxListeners(count);
+
 	return processExport;
 }
 
@@ -421,6 +419,7 @@ const processExport = {
 	hrtime,
 	kill,
 	listenerCount,
+	listeners,
 	memoryUsage,
 	nextTick,
 	off,
