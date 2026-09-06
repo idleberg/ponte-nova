@@ -10,7 +10,6 @@ import type {
 	Mode,
 	ObjectEncodingOptions,
 	OpenMode,
-	RmDirOptions,
 	RmOptions,
 	StatOptions,
 	Stats,
@@ -21,6 +20,19 @@ import * as compatPath from './path.js';
 // Extended error type for file system operations with dest property
 interface FileSystemError extends NodeJS.ErrnoException {
 	dest?: string;
+}
+
+/**
+ * Options for rmdir
+ *
+ * Declared here rather than imported, because @types/node now types it as an
+ * empty interface: `recursive` is deprecated in favour of `rm`, but Node.js
+ * still honours it and packages still pass it.
+ */
+interface RmDirOptions {
+	maxRetries?: number;
+	recursive?: boolean;
+	retryDelay?: number;
 }
 
 // ============================================================================
@@ -167,6 +179,10 @@ function classify(path: string, syscall: string, writing = false): FileSystemErr
 
 /**
  * Convert Nova FileStats to Node.js Stats object
+ *
+ * The cast covers the four Temporal.Instant timestamps Node.js added, which
+ * JavaScriptCore cannot produce: it has no Temporal. The millisecond and Date
+ * timestamps are the ones packages read, and those are real.
  */
 function convertStats(novaStats: FileStats): Stats {
 	const isFile = novaStats.isFile();
@@ -200,7 +216,7 @@ function convertStats(novaStats: FileStats): Stats {
 		isSymbolicLink: () => false,
 		isFIFO: () => false,
 		isSocket: () => false,
-	};
+	} as unknown as Stats;
 }
 
 /**
