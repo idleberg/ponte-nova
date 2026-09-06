@@ -4,57 +4,39 @@
  *
  * Nova only runs on macOS, so all values are macOS-specific.
  *
- * Static system information (arch, hostname, cpus, etc.) is cached at module
- * load time because Nova's Process API is async-only. The cache is populated
- * eagerly when the module loads, so values are available synchronously.
- */
-
-// ============================================================================
-// Helper Functions
-// ============================================================================
-
-/**
- * Execute a shell command asynchronously
+ * The Node.js os API is entirely synchronous, but the only way to obtain most
+ * of these values in Nova is the Process API, which is async-only. Values that
+ * describe the machine rather than its current state (arch, hostname, cpus,
+ * total memory, boot time) don't change between extension activations, so they
+ * are persisted to disk and read back synchronously on the next launch. A
+ * background refresh keeps that file current.
  *
- * Nova's Process API is async-only - there's no way to synchronously wait
- * for process completion. This function properly uses onDidExit to wait
- * for the process to finish.
+ * The consequence is a cold start: on the very first activation - before the
+ * file exists - these methods return the fallbacks defined below. Values that
+ * change from moment to moment (freemem, loadavg, networkInterfaces) can't be
+ * cached at all and remain unsupported.
  */
-function exec(command: string): Promise<string> {
-	return new Promise((resolve) => {
-		try {
-			const process = new Process('/usr/bin/env', {
-				args: ['sh', '-c', command],
-				shell: true,
-			});
-
-			let output = '';
-
-			process.onStdout((line) => {
-				output += line;
-			});
-
-			process.onDidExit(() => {
-				resolve(output.trim());
-			});
-
-			process.start();
-		} catch {
-			resolve('');
-		}
-	});
-}
 
 // ============================================================================
 // Static System Info Cache
 // ============================================================================
 
-/**
- * Cache for static system information that doesn't change during runtime.
- * Populated eagerly at module load time.
- */
-const cache = {
-	arch: 'arm64', // Default fallback
+interface SystemInfo {
+	arch: string;
+	hostname: string;
+	release: string;
+	version: string;
+	machine: string;
+	totalmem: number;
+	cpuModel: string;
+	cpuSpeed: number;
+	cpuCount: number;
+	bootTimestamp: number;
+}
+
+/** Values used until the cache file has been written for the first time */
+const fallbacks: SystemInfo = {
+	arch: 'arm64',
 	hostname: '',
 	release: '',
 	version: '',
@@ -66,65 +48,130 @@ const cache = {
 	bootTimestamp: 0,
 };
 
+const cacheDir = nova.extension.globalStoragePath;
+const cachePath = `${cacheDir}/os-cache.json`;
+
 /**
- * Initialize the cache with static system information.
- * Called at module load time.
+ * Read the persisted system information
+ *
+ * Deliberately uses nova.fs rather than the fs compatibility layer: no path
+ * resolution or Node.js error semantics are wanted here, just a synchronous
+ * read that falls back silently when the file is absent or unreadable.
  */
-async function initializeCache(): Promise<void> {
-	// Run all commands in parallel for faster initialization
-	const [
-		rosettaCheck,
-		unameM,
-		hostnameResult,
-		release,
-		version,
-		machine,
-		memsize,
-		cpuModel,
-		cpuFreq,
-		cpuCount,
-		bootTime,
-	] = await Promise.all([
-		exec('sysctl -in sysctl.proc_translated'),
-		exec('uname -m'),
-		exec('hostname'),
-		exec('uname -r'),
-		exec('uname -v'),
-		exec('sysctl -n hw.model'),
-		exec('sysctl -n hw.memsize'),
-		exec('sysctl -n machdep.cpu.brand_string'),
-		exec('sysctl -n hw.cpufrequency'),
-		exec('sysctl -n hw.logicalcpu'),
-		exec('sysctl -n kern.boottime'),
-	]);
+function readCache(): SystemInfo {
+	try {
+		const file = nova.fs.open(cachePath, 'r') as FileTextMode;
+		const contents = file.read();
 
-	// Determine architecture
-	if (rosettaCheck === '1') {
-		cache.arch = 'arm64';
-	} else if (unameM === 'arm64' || unameM === 'aarch64') {
-		cache.arch = 'arm64';
-	} else if (unameM === 'x86_64') {
-		cache.arch = 'x64';
-	}
+		file.close();
 
-	cache.hostname = hostnameResult || '';
-	cache.release = release;
-	cache.version = version;
-	cache.machine = machine;
-	cache.totalmem = memsize ? Number.parseInt(memsize, 10) : 0;
-	cache.cpuModel = cpuModel || 'Unknown';
-	cache.cpuSpeed = cpuFreq ? Math.round(Number.parseInt(cpuFreq, 10) / 1_000_000) : 0;
-	cache.cpuCount = cpuCount ? Number.parseInt(cpuCount, 10) : 1;
-
-	// Parse boot timestamp for uptime calculation
-	const bootMatch = bootTime.match(/sec\s*=\s*(\d+)/);
-	if (bootMatch?.[1]) {
-		cache.bootTimestamp = Number.parseInt(bootMatch[1], 10);
+		return { ...fallbacks, ...JSON.parse(contents ?? '') };
+	} catch {
+		return { ...fallbacks };
 	}
 }
 
-// Start cache initialization immediately when module loads
-initializeCache();
+function writeCache(info: SystemInfo): void {
+	try {
+		if (!nova.fs.access(cacheDir, nova.fs.F_OK)) {
+			nova.fs.mkdir(cacheDir);
+		}
+
+		const file = nova.fs.open(cachePath, 'w') as FileTextMode;
+
+		file.write(JSON.stringify(info));
+		file.close();
+	} catch {
+		// A missing cache only costs accuracy on the next launch, never correctness
+	}
+}
+
+const cache = readCache();
+
+/**
+ * Collect system information in a single subprocess
+ *
+ * Every value is emitted as a `key=value` line so that a sysctl which doesn't
+ * exist on this hardware (hw.cpufrequency on Apple Silicon, for one) yields an
+ * empty value instead of shifting every subsequent line.
+ */
+function collect(): Promise<Record<string, string>> {
+	const script = [
+		'echo "translated=$(sysctl -in sysctl.proc_translated)"',
+		'echo "unameM=$(uname -m)"',
+		'echo "hostname=$(hostname)"',
+		'echo "release=$(uname -r)"',
+		'echo "version=$(uname -v)"',
+		'echo "machine=$(sysctl -n hw.model 2>/dev/null)"',
+		'echo "memsize=$(sysctl -n hw.memsize 2>/dev/null)"',
+		'echo "cpuModel=$(sysctl -n machdep.cpu.brand_string 2>/dev/null)"',
+		'echo "cpuFreq=$(sysctl -n hw.cpufrequency 2>/dev/null)"',
+		'echo "cpuCount=$(sysctl -n hw.logicalcpu 2>/dev/null)"',
+		'echo "boottime=$(sysctl -n kern.boottime 2>/dev/null)"',
+	].join('\n');
+
+	return new Promise((resolve) => {
+		try {
+			const process = new Process('/bin/sh', { args: ['-c', script] });
+			const values: Record<string, string> = {};
+
+			process.onStdout((line) => {
+				const separator = line.indexOf('=');
+
+				if (separator > 0) {
+					values[line.slice(0, separator)] = line.slice(separator + 1).trim();
+				}
+			});
+
+			process.onDidExit(() => resolve(values));
+			process.start();
+		} catch {
+			resolve({});
+		}
+	});
+}
+
+/**
+ * Refresh the cache in the background
+ *
+ * Results are merged into the live cache as well as written to disk, so a
+ * long-running session picks up correct values even on a cold start.
+ */
+async function refreshCache(): Promise<void> {
+	const values = await collect();
+
+	// Nothing was collected - keep whatever the cache already holds
+	if (!values.unameM) {
+		return;
+	}
+
+	// Under Rosetta, uname reports the translated architecture, not the hardware
+	const arch =
+		values.translated === '1' || values.unameM === 'arm64' || values.unameM === 'aarch64'
+			? 'arm64'
+			: values.unameM === 'x86_64'
+				? 'x64'
+				: fallbacks.arch;
+
+	const bootTimestamp = values.boottime?.match(/sec\s*=\s*(\d+)/)?.[1];
+
+	Object.assign(cache, {
+		arch,
+		hostname: values.hostname || '',
+		release: values.release || '',
+		version: values.version || '',
+		machine: values.machine || '',
+		totalmem: Number.parseInt(values.memsize ?? '', 10) || 0,
+		cpuModel: values.cpuModel || 'Unknown',
+		cpuSpeed: Math.round(Number.parseInt(values.cpuFreq ?? '', 10) / 1_000_000) || 0,
+		cpuCount: Number.parseInt(values.cpuCount ?? '', 10) || 1,
+		bootTimestamp: bootTimestamp ? Number.parseInt(bootTimestamp, 10) : 0,
+	} satisfies SystemInfo);
+
+	writeCache(cache);
+}
+
+refreshCache();
 
 // ============================================================================
 // Constants
@@ -156,7 +203,7 @@ export function type(): string {
 /**
  * Returns the operating system CPU architecture
  *
- * Returns cached value populated at module load time.
+ * Read from the persisted cache; see the note at the top of this module.
  * Uses sysctl to detect if running under Rosetta translation.
  */
 export function arch(): string {
@@ -166,7 +213,7 @@ export function arch(): string {
 /**
  * Returns the operating system release version (kernel version)
  *
- * Returns cached value populated at module load time.
+ * Read from the persisted cache; see the note at the top of this module.
  */
 export function release(): string {
 	return cache.release;
@@ -175,7 +222,7 @@ export function release(): string {
 /**
  * Returns the system hostname
  *
- * Returns cached value populated at module load time.
+ * Read from the persisted cache; see the note at the top of this module.
  */
 export function hostname(): string {
 	return cache.hostname;
@@ -225,7 +272,7 @@ export function tmpdir(): string {
 /**
  * Returns the total amount of system memory in bytes
  *
- * Returns cached value populated at module load time.
+ * Read from the persisted cache; see the note at the top of this module.
  */
 export function totalmem(): number {
 	return cache.totalmem;
@@ -246,7 +293,7 @@ export function freemem(): number {
 /**
  * Returns an array of objects containing information about each CPU/core
  *
- * Returns cached values populated at module load time.
+ * Read from the persisted cache; see the note at the top of this module.
  * Note: CPU times are always 0 as Nova doesn't expose this information.
  */
 export function cpus(): Array<{
@@ -278,8 +325,10 @@ export function cpus(): Array<{
 /**
  * Returns the system uptime in seconds
  *
- * Calculates uptime from cached boot timestamp (fetched at module load)
- * and current time. This allows the value to update without async calls.
+ * Derived from the cached boot timestamp and the current time, so the value
+ * stays accurate as the session goes on without needing an async call. A boot
+ * timestamp cached before the last restart is corrected by the background
+ * refresh; see the note at the top of this module.
  */
 export function uptime(): number {
 	if (cache.bootTimestamp === 0) {
@@ -393,7 +442,7 @@ export function endianness(): 'BE' | 'LE' {
 /**
  * Returns a string identifying the kernel version
  *
- * Returns cached value populated at module load time.
+ * Read from the persisted cache; see the note at the top of this module.
  */
 export function version(): string {
 	return cache.version;
@@ -402,7 +451,7 @@ export function version(): string {
 /**
  * Returns the machine type (hardware model)
  *
- * Returns cached value populated at module load time.
+ * Read from the persisted cache; see the note at the top of this module.
  */
 export function machine(): string {
 	return cache.machine;

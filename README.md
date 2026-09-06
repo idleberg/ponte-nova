@@ -115,6 +115,12 @@ Since Nova is Macintosh-only, all methods in `path.win32` are not supported.
 
 `chmod`, `chmodSync`, `chown`, `chownSync`, `createReadStream`, `createWriteStream`, `fchmod`, `fchmodSync`, `fchown`, `fchownSync`, `fdatasync`, `fdatasyncSync`, `fstat`, `fstatSync`, `fsync`, `fsyncSync`, `ftruncate`, `ftruncateSync`, `futimes`, `futimesSync`, `lchmod`, `lchmodSync`, `lchown`, `lchownSync`, `link`, `linkSync`, `lutimes`, `lutimesSync`, `readlink`, `readlinkSync`, `symlink`, `symlinkSync`, `truncate`, `truncateSync`, `unwatchFile`, `utimes`, `utimesSync`, `watch`, `watchFile`
 
+### Stale OS information
+
+The NodeJS `os` API is synchronous, but Nova can only read most of these values through its async-only Process API. Values describing the machine rather than its current state — `arch`, `hostname`, `release`, `version`, `machine`, `totalmem`, `cpus` and `uptime` — are therefore cached to disk and read back synchronously on the next activation.
+
+On the very first activation, before that cache exists, these methods return fallback values (`arm64`, empty strings, zeroes). They become accurate once the background refresh completes, and on every activation thereafter.
+
 ### Unsupported OS methods
 
 `getPriority`, `setPriority`
