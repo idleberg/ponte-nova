@@ -83,7 +83,8 @@
 		"lint:e18e": "e18e-cli analyze",
 		"prepack": "npm run build",
 		"publish:npm": "np --any-branch",
-		"test": "#vitest run"
+		"test": "tsdown && vitest run",
+		"test:coverage": "tsdown && vitest run --coverage"
 	},
 	"dependencies": {
 		"@rollup/plugin-alias": "^6.0.0",
