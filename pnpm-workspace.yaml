@@ -1,0 +1,7 @@
+allowBuilds:
+  lefthook: true
+autoInstallPeers: true
+publicHoistPattern:
+  - '*@biomejs/biome*'
+  - '*@total-typescript/tsconfig*'
+  - '*lefthook*'
