@@ -456,7 +456,6 @@ export class Buffer extends Uint8Array {
 		return compareBytes(this, other) === 0;
 	}
 
-	// biome-ignore lint/suspicious/useAdjacentOverloadSignatures: the static Buffer.compare and this instance method are separate members that happen to share a name, as they do in Node.js
 	compare(
 		target: Uint8Array,
 		targetStart = 0,

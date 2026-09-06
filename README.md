@@ -124,13 +124,31 @@ As in NodeJS, `fs.readFileSync(path)` without an encoding returns a `Buffer`, an
 
 Since Nova is Macintosh-only, all methods in `path.win32` are not supported.
 
+### Hashing
+
+Nova has no hashing API, so `createHash` and `createHmac` run on [hash-wasm](https://github.com/Daninet/hash-wasm). Their signatures are exactly the NodeJS ones — `createHash('sha256').update(data).digest('hex')` is synchronous and returns a string — and the output is verified against NodeJS for every supported algorithm, digest encoding and HMAC key length.
+
+There is one thing to do first. The only way into hash-wasm is `WebAssembly.compile`, which is asynchronous, so the compile has to happen before the first digest rather than during it:
+
+```js
+const crypto = require('node:crypto');
+
+exports.activate = async () => {
+  await crypto.ready();
+};
+```
+
+That takes a few milliseconds, and every hash afterwards is synchronous. `ready()` with no argument compiles every algorithm; pass a list, such as `ready(['sha256'])`, to compile only what you use. A digest attempted before then throws and says so, rather than returning something wrong. The case this does not cover is a bundled package that hashes while it is being imported, before your `activate` runs.
+
+Supported algorithms: `blake2b512`, `blake2s256`, `md5`, `ripemd160`, `sha1`, `sha224`, `sha256`, `sha384`, `sha512`, `sha3-224`, `sha3-256`, `sha3-384`, `sha3-512`, `sm3`. `getHashes()` reports them.
+
+Note that an extension using `createHash` grows by roughly 116 kB, which is hash-wasm's WebAssembly embedded as base64.
+
 ### Unsupported Crypto methods
 
-Nova's crypto API only provides `getRandomValues` and `randomUUID`, so only random data generation is supported. Everything else throws:
+Ciphers, key derivation and signing have no counterpart here and throw:
 
-`createCipher`, `createCipheriv`, `createDecipher`, `createDecipheriv`, `createDiffieHellman`, `createHash`, `createHmac`, `createSign`, `createVerify`, `generateKeyPair`, `generateKeyPairSync`, `pbkdf2`, `pbkdf2Sync`, `scrypt`, `scryptSync`
-
-Note that hashing is the most common reason packages import `node:crypto`, so many of them will remain incompatible.
+`createCipher`, `createCipheriv`, `createDecipher`, `createDecipheriv`, `createDiffieHellman`, `createSign`, `createVerify`, `generateKeyPair`, `generateKeyPairSync`, `pbkdf2`, `pbkdf2Sync`, `scrypt`, `scryptSync`
 
 ### Globals
 

@@ -2,16 +2,32 @@
  * Crypto module compatibility layer for Nova extensions
  * Maps Node.js crypto API to Nova-compatible implementations
  *
- * Nova provides limited crypto functionality via nova.crypto:
- * - getRandomValues(typedArray) - fills TypedArray with secure random values
- * - randomUUID() - generates UUID v4 identifier
+ * Nova provides two primitives via nova.crypto - getRandomValues and randomUUID
+ * - and everything built on them (randomBytes, randomFill) is available.
  *
- * Everything built on those primitives (randomBytes, randomFill) is available.
- * Hashing, ciphers, key derivation and signing have no Nova counterpart and
- * throw - which, since hashing is what most packages reach for, means a lot of
- * crypto-dependent packages will still not work.
+ * Hashing has no Nova counterpart at all, so createHash and createHmac run on
+ * hash-wasm instead. That library compiles its WebAssembly asynchronously while
+ * Node.js hashes synchronously, which is bridged by buffering the input and
+ * hashing it at digest time; see the note on ready() below for the one thing
+ * that asks of the caller.
+ *
+ * Ciphers, key derivation and signing still throw.
  */
 
+import {
+	createBLAKE2b,
+	createBLAKE2s,
+	createMD5,
+	createRIPEMD160,
+	createSHA1,
+	createSHA3,
+	createSHA224,
+	createSHA256,
+	createSHA384,
+	createSHA512,
+	createSM3,
+	type IHasher,
+} from 'hash-wasm';
 import { Buffer } from './buffer.js';
 
 // ============================================================================
@@ -110,6 +126,239 @@ export function randomFill<T extends ArrayBufferView>(
 }
 
 // ============================================================================
+// Hashing
+// ============================================================================
+
+/**
+ * The hash algorithms hash-wasm provides under the names Node.js uses
+ *
+ * blockSize is the block length HMAC pads the key to. For the SHA-3 family that
+ * is the sponge rate rather than a power of two, which is why the numbers look
+ * irregular.
+ */
+const algorithms: Record<string, { create: () => Promise<IHasher>; blockSize: number }> = {
+	blake2b512: { create: () => createBLAKE2b(512), blockSize: 128 },
+	blake2s256: { create: () => createBLAKE2s(256), blockSize: 64 },
+	md5: { create: createMD5, blockSize: 64 },
+	ripemd160: { create: createRIPEMD160, blockSize: 64 },
+	sha1: { create: createSHA1, blockSize: 64 },
+	sha224: { create: createSHA224, blockSize: 64 },
+	sha256: { create: createSHA256, blockSize: 64 },
+	sha384: { create: createSHA384, blockSize: 128 },
+	sha512: { create: createSHA512, blockSize: 128 },
+	'sha3-224': { create: () => createSHA3(224), blockSize: 144 },
+	'sha3-256': { create: () => createSHA3(256), blockSize: 136 },
+	'sha3-384': { create: () => createSHA3(384), blockSize: 104 },
+	'sha3-512': { create: () => createSHA3(512), blockSize: 72 },
+	sm3: { create: createSM3, blockSize: 64 },
+};
+
+/** Names OpenSSL accepts for an algorithm listed above */
+const aliases: Record<string, string> = {
+	'blake2b-512': 'blake2b512',
+	'blake2s-256': 'blake2s256',
+	rmd160: 'ripemd160',
+	'ripemd-160': 'ripemd160',
+	'sha-1': 'sha1',
+	'sha-224': 'sha224',
+	'sha-256': 'sha256',
+	'sha-384': 'sha384',
+	'sha-512': 'sha512',
+};
+
+const loaded = new Map<string, IHasher>();
+const loading = new Map<string, Promise<IHasher>>();
+
+function normalizeAlgorithm(algorithm: string): string {
+	const name = algorithm.toLowerCase();
+	const resolved = aliases[name] ?? name;
+
+	if (!algorithms[resolved]) {
+		const error = new Error(`Digest method not supported: ${algorithm}`);
+
+		(error as Error & { code?: string }).code = 'ERR_CRYPTO_INVALID_DIGEST';
+
+		throw error;
+	}
+
+	return resolved;
+}
+
+/**
+ * Compile the WebAssembly behind one or more algorithms
+ *
+ * Node.js hashes synchronously and hash-wasm compiles asynchronously, so the
+ * compile has to happen before the first digest rather than during it. Call
+ * this once while the extension activates:
+ *
+ *     exports.activate = async () => { await crypto.ready(); };
+ *
+ * With no argument every supported algorithm is compiled, which is a handful of
+ * milliseconds and means nothing further has to be predicted. Pass a list to
+ * compile only what the extension actually uses.
+ */
+export async function ready(algorithmNames?: string[]): Promise<void> {
+	const wanted = (algorithmNames ?? Object.keys(algorithms)).map(normalizeAlgorithm);
+
+	await Promise.all(wanted.map((name) => load(name)));
+}
+
+function load(algorithm: string): Promise<IHasher> {
+	const pending = loading.get(algorithm);
+
+	if (pending) {
+		return pending;
+	}
+
+	const promise = (algorithms[algorithm] as { create: () => Promise<IHasher> }).create().then((hasher) => {
+		loaded.set(algorithm, hasher);
+
+		return hasher;
+	});
+
+	loading.set(algorithm, promise);
+
+	return promise;
+}
+
+/**
+ * Hash a sequence of chunks in one go
+ *
+ * The hasher instance is shared per algorithm, which is safe because init,
+ * update and digest all run synchronously here with nothing able to interleave
+ * between them.
+ */
+function digestChunks(algorithm: string, chunks: Uint8Array[]): Uint8Array {
+	const hasher = loaded.get(algorithm);
+
+	if (!hasher) {
+		// Compiling now does not help this call, but it helps the next one
+		load(algorithm);
+
+		throw new Error(
+			`The WebAssembly implementation of '${algorithm}' has not finished loading. Node.js hashes synchronously and this one cannot, so call 'await crypto.ready()' once while your extension activates.`,
+		);
+	}
+
+	hasher.init();
+
+	for (const chunk of chunks) {
+		hasher.update(chunk);
+	}
+
+	return hasher.digest('binary');
+}
+
+/** HMAC as defined in RFC 2104, over whichever hash was asked for */
+function digestHmac(algorithm: string, key: Uint8Array, chunks: Uint8Array[]): Uint8Array {
+	const { blockSize } = algorithms[algorithm] as { blockSize: number };
+	const padded = new Uint8Array(blockSize);
+
+	padded.set(key.length > blockSize ? digestChunks(algorithm, [key]) : key);
+
+	const inner = new Uint8Array(blockSize);
+	const outer = new Uint8Array(blockSize);
+
+	for (let index = 0; index < blockSize; index++) {
+		inner[index] = (padded[index] as number) ^ 0x36;
+		outer[index] = (padded[index] as number) ^ 0x5c;
+	}
+
+	return digestChunks(algorithm, [outer, digestChunks(algorithm, [inner, ...chunks])]);
+}
+
+function toBytes(data: string | ArrayBufferView | ArrayBuffer, encoding?: BufferEncoding): Uint8Array {
+	if (typeof data === 'string') {
+		return Buffer.from(data, encoding ?? 'utf8');
+	}
+
+	return ArrayBuffer.isView(data)
+		? new Uint8Array(data.buffer, data.byteOffset, data.byteLength)
+		: new Uint8Array(data);
+}
+
+/**
+ * A Hash or Hmac object
+ *
+ * Input is buffered rather than fed to the hasher as it arrives, because the
+ * WebAssembly may still be compiling while update is being called. That costs
+ * memory proportional to the input, which is the trade for keeping Node.js's
+ * synchronous digest.
+ */
+export class Hash {
+	#algorithm: string;
+	#chunks: Uint8Array[];
+	#key: Uint8Array | null;
+	#digested = false;
+
+	constructor(algorithm: string, key?: Uint8Array | null, chunks: Uint8Array[] = []) {
+		this.#algorithm = normalizeAlgorithm(algorithm);
+		this.#key = key ?? null;
+		this.#chunks = chunks;
+
+		// Nothing needs it yet, but the compile can overlap with whatever follows
+		if (!loaded.has(this.#algorithm)) {
+			load(this.#algorithm);
+		}
+	}
+
+	update(data: string | ArrayBufferView | ArrayBuffer, inputEncoding?: BufferEncoding): this {
+		if (this.#digested) {
+			throw new Error('Digest already called');
+		}
+
+		this.#chunks.push(toBytes(data, inputEncoding));
+
+		return this;
+	}
+
+	digest(): Buffer;
+	digest(encoding: BufferEncoding): string;
+	digest(encoding?: BufferEncoding): string | Buffer {
+		this.#digested = true;
+
+		const bytes = this.#key
+			? digestHmac(this.#algorithm, this.#key, this.#chunks)
+			: digestChunks(this.#algorithm, this.#chunks);
+		const result = Buffer.from(bytes);
+
+		return encoding ? result.toString(encoding) : result;
+	}
+
+	copy(): Hash {
+		return new Hash(this.#algorithm, this.#key, [...this.#chunks]);
+	}
+}
+
+/**
+ * Creates a Hash object for the given algorithm
+ *
+ * Requires the algorithm's WebAssembly to have been compiled; see ready().
+ */
+export function createHash(algorithm: string): Hash {
+	return new Hash(algorithm);
+}
+
+/**
+ * Creates an Hmac object for the given algorithm and key
+ *
+ * Requires the algorithm's WebAssembly to have been compiled; see ready().
+ */
+export function createHmac(algorithm: string, key: string | ArrayBufferView | ArrayBuffer): Hash {
+	return new Hash(algorithm, toBytes(key));
+}
+
+/**
+ * Lists the supported hash algorithms
+ *
+ * Shorter than the Node.js list, which reports everything the linked OpenSSL
+ * offers, and reports only what can actually be computed here.
+ */
+export function getHashes(): string[] {
+	return Object.keys(algorithms).sort();
+}
+
+// ============================================================================
 // Unsupported Operations
 // ============================================================================
 
@@ -118,10 +367,6 @@ const unsupportedError = (method: string) => () => {
 		`crypto.${method} is not supported in Nova extensions. Nova only provides randomBytes, randomFill, getRandomValues and randomUUID.`,
 	);
 };
-
-export const createHash = unsupportedError('createHash');
-
-export const createHmac = unsupportedError('createHmac');
 
 export const createCipher = unsupportedError('createCipher');
 
@@ -154,13 +399,16 @@ export const scryptSync = unsupportedError('scryptSync');
 // ============================================================================
 
 export default {
+	Hash,
+	createHash,
+	createHmac,
+	getHashes,
+	ready,
 	randomBytes,
 	randomFill,
 	randomFillSync,
 	getRandomValues,
 	randomUUID,
-	createHash,
-	createHmac,
 	createCipher,
 	createDecipher,
 	createCipheriv,
