@@ -120,6 +120,12 @@ Nova's crypto API only provides `getRandomValues` and `randomUUID`, so only rand
 
 Note that hashing is the most common reason packages import `node:crypto`, so many of them will remain incompatible.
 
+### Approximated FileSystem errors
+
+Nova's FileSystem API throws opaque errors, so the Node.js error codes are reconstructed by inspecting the path after a failure. The common cases — `ENOENT`, `EEXIST`, `EISDIR`, `ENOTDIR`, `ENOTEMPTY`, `EACCES` — come out right, but a failure with an unusual cause will be reported as `EACCES`.
+
+Constants and `errno` values follow macOS, matching what Node.js reports there rather than on Linux.
+
 ### Unsupported FileSystem methods
 
 `chmod`, `chmodSync`, `chown`, `chownSync`, `createReadStream`, `createWriteStream`, `fchmod`, `fchmodSync`, `fchown`, `fchownSync`, `fdatasync`, `fdatasyncSync`, `fstat`, `fstatSync`, `fsync`, `fsyncSync`, `ftruncate`, `ftruncateSync`, `futimes`, `futimesSync`, `lchmod`, `lchmodSync`, `lchown`, `lchownSync`, `link`, `linkSync`, `lutimes`, `lutimesSync`, `readlink`, `readlinkSync`, `symlink`, `symlinkSync`, `truncate`, `truncateSync`, `unwatchFile`, `utimes`, `utimesSync`, `watch`, `watchFile`

@@ -34,22 +34,24 @@ export const constants = {
 	X_OK: 1, // File is executable
 
 	// File Open Constants
+	//
+	// These are the Darwin values from <sys/fcntl.h>, matching what Node.js
+	// exposes on macOS. O_NOATIME and O_DIRECT are Linux-only and therefore
+	// absent here, just as they are absent from Node.js on macOS.
 	O_RDONLY: 0,
 	O_WRONLY: 1,
 	O_RDWR: 2,
-	O_CREAT: 64,
-	O_EXCL: 128,
-	O_NOCTTY: 256,
-	O_TRUNC: 512,
-	O_APPEND: 1024,
-	O_DIRECTORY: 65536,
-	O_NOATIME: 262144,
-	O_NOFOLLOW: 131072,
-	O_SYNC: 1052672,
-	O_DSYNC: 4096,
-	O_SYMLINK: 200000,
-	O_DIRECT: 16384,
-	O_NONBLOCK: 2048,
+	O_NONBLOCK: 4,
+	O_APPEND: 8,
+	O_SYNC: 128,
+	O_NOFOLLOW: 256,
+	O_CREAT: 512,
+	O_TRUNC: 1024,
+	O_EXCL: 2048,
+	O_NOCTTY: 131072,
+	O_DIRECTORY: 1048576,
+	O_SYMLINK: 2097152,
+	O_DSYNC: 4194304,
 
 	// File Type Constants (for stats mode)
 	S_IFMT: 61440, // Bit mask for file type
@@ -102,6 +104,92 @@ export const constants = {
  */
 function defer(callback: () => void): void {
 	setTimeout(callback, 0);
+}
+
+/**
+ * Darwin errno values, as reported by Node.js on macOS
+ */
+const errnos: Record<string, [number, string]> = {
+	EACCES: [-13, 'permission denied'],
+	EPERM: [-1, 'operation not permitted'],
+	EEXIST: [-17, 'file already exists'],
+	EISDIR: [-21, 'illegal operation on a directory'],
+	ENOENT: [-2, 'no such file or directory'],
+	ENOTDIR: [-20, 'not a directory'],
+	ENOTEMPTY: [-66, 'directory not empty'],
+};
+
+/**
+ * Build an error matching the shape Node.js throws for file system failures
+ */
+function fsError(code: keyof typeof errnos, syscall: string, path: string, dest?: string): FileSystemError {
+	const [errno, message] = errnos[code] as [number, string];
+	const target = dest ? `'${path}' -> '${dest}'` : `'${path}'`;
+	const error = new Error(`${code}: ${message}, ${syscall} ${target}`) as FileSystemError;
+
+	error.code = code;
+	error.errno = errno;
+	error.syscall = syscall;
+	error.path = path;
+
+	if (dest) {
+		error.dest = dest;
+	}
+
+	return error;
+}
+
+/**
+ * Determine why an operation on an existing-or-not path failed
+ *
+ * Nova throws opaque errors, so the cause is reconstructed by inspecting the
+ * path afterwards. This is what keeps a missing file from being reported as a
+ * permission problem, and a directory from being reported as missing.
+ */
+function classify(path: string, syscall: string, writing = false): FileSystemError {
+	const resolvedPath = compatPath.resolve(path);
+	const stats = existsSync(resolvedPath) ? nova.fs.stat(resolvedPath) : null;
+
+	if (stats?.isDirectory()) {
+		return fsError('EISDIR', syscall, path);
+	}
+
+	if (!stats) {
+		// A write only needs its parent to exist; anything else is missing outright
+		if (!writing || !existsSync(compatPath.dirname(resolvedPath))) {
+			return fsError('ENOENT', syscall, path);
+		}
+	}
+
+	return fsError('EACCES', syscall, path);
+}
+
+/**
+ * Encode a string as UTF-8 bytes
+ *
+ * Nova has no TextEncoder, but readSync and writeSync deal in bytes while
+ * Nova's text-mode files deal in strings, so the conversion has to happen
+ * somewhere. Encoding by hand also keeps the byte counts these functions
+ * return honest for non-ASCII content.
+ */
+function encodeUtf8(value: string): Uint8Array {
+	const bytes: number[] = [];
+
+	for (const character of value) {
+		const code = character.codePointAt(0) as number;
+
+		if (code < 0x80) {
+			bytes.push(code);
+		} else if (code < 0x800) {
+			bytes.push(0xc0 | (code >> 6), 0x80 | (code & 0x3f));
+		} else if (code < 0x10000) {
+			bytes.push(0xe0 | (code >> 12), 0x80 | ((code >> 6) & 0x3f), 0x80 | (code & 0x3f));
+		} else {
+			bytes.push(0xf0 | (code >> 18), 0x80 | ((code >> 12) & 0x3f), 0x80 | ((code >> 6) & 0x3f), 0x80 | (code & 0x3f));
+		}
+	}
+
+	return Uint8Array.from(bytes);
 }
 
 /**
@@ -204,13 +292,7 @@ export function readFileSync(path: string, options?: ObjectEncodingOptions | Buf
 
 		return content ?? '';
 	} catch {
-		const error = new Error(`ENOENT: no such file or directory, open '${path}'`) as NodeJS.ErrnoException;
-
-		error.code = 'ENOENT';
-		error.errno = -2;
-		error.path = path;
-
-		throw error;
+		throw classify(path, 'open');
 	}
 }
 
@@ -231,13 +313,7 @@ export function writeFileSync(
 		file.write(String(data), encoding as Encoding);
 		file.close();
 	} catch {
-		const error = new Error(`EACCES: permission denied, open '${path}'`) as NodeJS.ErrnoException;
-
-		error.code = 'EACCES';
-		error.errno = -13;
-		error.path = path;
-
-		throw error;
+		throw classify(path, 'open', true);
 	}
 }
 
@@ -258,13 +334,7 @@ export function appendFileSync(
 		file.write(String(data), encoding as Encoding);
 		file.close();
 	} catch {
-		const error = new Error(`EACCES: permission denied, open '${path}'`) as NodeJS.ErrnoException;
-
-		error.code = 'EACCES';
-		error.errno = -13;
-		error.path = path;
-
-		throw error;
+		throw classify(path, 'open', true);
 	}
 }
 
@@ -276,27 +346,16 @@ export function statSync(path: string, _options?: StatOptions): Stats {
 
 	try {
 		const novaStats = nova.fs.stat(resolvedPath);
+
 		if (!novaStats) {
-			const error = new Error(`ENOENT: no such file or directory, stat '${path}'`) as NodeJS.ErrnoException;
-
-			error.code = 'ENOENT';
-			error.errno = -2;
-			error.path = path;
-
-			throw error;
+			throw fsError('ENOENT', 'stat', path);
 		}
 
 		return convertStats(novaStats);
 	} catch (e) {
 		if ((e as NodeJS.ErrnoException).code) throw e;
 
-		const error = new Error(`ENOENT: no such file or directory, stat '${path}'`) as NodeJS.ErrnoException;
-
-		error.code = 'ENOENT';
-		error.errno = -2;
-		error.path = path;
-
-		throw error;
+		throw fsError('ENOENT', 'stat', path);
 	}
 }
 
@@ -340,13 +399,10 @@ export function mkdirSync(path: string, options?: MakeDirectoryOptions | Mode | 
 			nova.fs.mkdir(resolvedPath);
 		}
 	} catch {
-		const error = new Error(`EEXIST: file already exists, mkdir '${path}'`) as NodeJS.ErrnoException;
-
-		error.code = 'EEXIST';
-		error.errno = -17;
-		error.path = path;
-
-		throw error;
+		// An existing target is EEXIST, a missing parent is ENOENT
+		throw existsSync(resolvedPath)
+			? fsError('EEXIST', 'mkdir', path)
+			: fsError(existsSync(compatPath.dirname(resolvedPath)) ? 'EACCES' : 'ENOENT', 'mkdir', path);
 	}
 }
 
@@ -373,6 +429,10 @@ export function readdirSync(
 				(name) =>
 					({
 						name,
+						// parentPath supersedes the deprecated path property in Node.js 20.12+,
+						// but both are populated because packages still read either one
+						parentPath: resolvedPath,
+						path: resolvedPath,
 						isFile: () => {
 							try {
 								const stats = nova.fs.stat(compatPath.join(resolvedPath, name));
@@ -402,13 +462,8 @@ export function readdirSync(
 
 		return entries;
 	} catch {
-		const error = new Error(`ENOENT: no such file or directory, scandir '${path}'`) as NodeJS.ErrnoException;
-
-		error.code = 'ENOENT';
-		error.errno = -2;
-		error.path = path;
-
-		throw error;
+		// Listing a file rather than a directory is ENOTDIR, not ENOENT
+		throw fsError(existsSync(resolvedPath) ? 'ENOTDIR' : 'ENOENT', 'scandir', path);
 	}
 }
 
@@ -421,13 +476,12 @@ export function unlinkSync(path: string): void {
 	try {
 		nova.fs.remove(resolvedPath);
 	} catch {
-		const error = new Error(`ENOENT: no such file or directory, unlink '${path}'`) as NodeJS.ErrnoException;
+		if (!existsSync(resolvedPath)) {
+			throw fsError('ENOENT', 'unlink', path);
+		}
 
-		error.code = 'ENOENT';
-		error.errno = -2;
-		error.path = path;
-
-		throw error;
+		// Unlinking a directory is EPERM on Darwin, unlike the EISDIR of Linux
+		throw fsError(nova.fs.stat(resolvedPath)?.isDirectory() ? 'EPERM' : 'EACCES', 'unlink', path);
 	}
 }
 
@@ -439,32 +493,27 @@ export function rmdirSync(path: string, options?: RmDirOptions): void {
 
 	try {
 		if (options?.recursive) {
-			// Remove directory and all contents
+			// Only nova.fs.remove deletes a directory along with its contents
 			nova.fs.remove(resolvedPath);
 		} else {
-			// Nova's remove works on directories, but we should check if empty
-			const contents = nova.fs.listdir(resolvedPath);
-			if (contents.length > 0) {
-				const error = new Error(`ENOTEMPTY: directory not empty, rmdir '${path}'`) as NodeJS.ErrnoException;
-
-				error.code = 'ENOTEMPTY';
-				error.errno = -39;
-				error.path = path;
-
-				throw error;
+			// nova.fs.rmdir refuses to delete a non-empty directory, which is
+			// what rmdirSync is supposed to do. The listing only exists to
+			// report the failure with the code Node.js would use.
+			if (nova.fs.listdir(resolvedPath).length > 0) {
+				throw fsError('ENOTEMPTY', 'rmdir', path);
 			}
-			nova.fs.remove(resolvedPath);
+
+			nova.fs.rmdir(resolvedPath);
 		}
 	} catch (e) {
 		if ((e as NodeJS.ErrnoException).code) throw e; // Re-throw if already formatted
 
-		const error = new Error(`ENOENT: no such file or directory, rmdir '${path}'`) as NodeJS.ErrnoException;
+		if (!existsSync(resolvedPath)) {
+			throw fsError('ENOENT', 'rmdir', path);
+		}
 
-		error.code = 'ENOENT';
-		error.errno = -2;
-		error.path = path;
-
-		throw error;
+		// rmdir on a file is ENOTDIR
+		throw fsError(nova.fs.stat(resolvedPath)?.isDirectory() ? 'EACCES' : 'ENOTDIR', 'rmdir', path);
 	}
 }
 
@@ -495,16 +544,10 @@ export function renameSync(oldPath: string, newPath: string): void {
 	try {
 		nova.fs.move(resolvedOldPath, resolvedNewPath);
 	} catch {
-		const error = new Error(
-			`ENOENT: no such file or directory, rename '${oldPath}' -> '${newPath}'`,
-		) as FileSystemError;
+		// A missing source is ENOENT, so is a destination whose parent is missing
+		const missing = !existsSync(resolvedOldPath) || !existsSync(compatPath.dirname(resolvedNewPath));
 
-		error.code = 'ENOENT';
-		error.errno = -2;
-		error.path = oldPath;
-		error.dest = newPath;
-
-		throw error;
+		throw fsError(missing ? 'ENOENT' : 'EACCES', 'rename', oldPath, newPath);
 	}
 }
 
@@ -517,30 +560,17 @@ export function copyFileSync(src: string, dest: string, mode?: number): void {
 
 	try {
 		// Check if COPYFILE_EXCL flag is set
-		if (mode && mode & constants.COPYFILE_EXCL) {
-			if (existsSync(dest)) {
-				const error = new Error(`EEXIST: file already exists, copyfile '${src}' -> '${dest}'`) as FileSystemError;
-
-				error.code = 'EEXIST';
-				error.errno = -17;
-				error.path = src;
-				error.dest = dest;
-
-				throw error;
-			}
+		if (mode && mode & constants.COPYFILE_EXCL && existsSync(dest)) {
+			throw fsError('EEXIST', 'copyfile', src, dest);
 		}
 
 		nova.fs.copy(resolvedSrc, resolvedDest);
 	} catch (e) {
 		if ((e as FileSystemError).code) throw e;
-		const error = new Error(`ENOENT: no such file or directory, copyfile '${src}' -> '${dest}'`) as FileSystemError;
 
-		error.code = 'ENOENT';
-		error.errno = -2;
-		error.path = src;
-		error.dest = dest;
+		const missing = !existsSync(resolvedSrc) || !existsSync(compatPath.dirname(resolvedDest));
 
-		throw error;
+		throw fsError(missing ? 'ENOENT' : 'EACCES', 'copyfile', src, dest);
 	}
 }
 
@@ -557,13 +587,7 @@ export function cpSync(src: string, dest: string, options?: CopyOptions): void {
 		if (stats.isDirectory()) {
 			// Recursive directory copy
 			if (!options?.recursive) {
-				const error = new Error(`EISDIR: illegal operation on a directory, cp '${src}'`) as NodeJS.ErrnoException;
-
-				error.code = 'EISDIR';
-				error.errno = -21;
-				error.path = src;
-
-				throw error;
+				throw fsError('EISDIR', 'cp', src);
 			}
 
 			// Create destination directory
@@ -586,14 +610,7 @@ export function cpSync(src: string, dest: string, options?: CopyOptions): void {
 	} catch (e) {
 		if ((e as FileSystemError).code) throw e;
 
-		const error = new Error(`ENOENT: no such file or directory, cp '${src}' -> '${dest}'`) as FileSystemError;
-
-		error.code = 'ENOENT';
-		error.errno = -2;
-		error.path = src;
-		error.dest = dest;
-
-		throw error;
+		throw fsError('ENOENT', 'cp', src, dest);
 	}
 }
 
@@ -641,16 +658,22 @@ export function realpathSync(path: string, _options?: ObjectEncodingOptions | Bu
  * Create temporary directory
  *
  * Custom implementation because Nova doesn't provide a mkdtemp equivalent.
- * Creates directories under /tmp/.ponte-nova/ with a random suffix appended
- * to the prefix to match Node.js mkdtemp behavior.
+ * The prefix is a path prefix, not just a name, so `/tmp/build-` has to yield
+ * `/tmp/build-XXXXXX` rather than a directory somewhere else. As in Node.js,
+ * the parent directory has to exist already.
  */
 export function mkdtempSync(prefix: string, _options?: ObjectEncodingOptions | BufferEncoding | null): string {
-	const randomSuffix = Math.random().toString(36).substring(2, 8);
-	const tmpPath = compatPath.join('/tmp', '.ponte-nova', prefix + randomSuffix);
+	const characters = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+	const random = Array.from(nova.crypto.getRandomValues(new Uint8Array(6)), (byte) =>
+		characters.charAt(byte % characters.length),
+	).join('');
 
-	mkdirSync(tmpPath, { recursive: true });
+	const tempPath = prefix + random;
 
-	return tmpPath;
+	mkdirSync(tempPath);
+
+	// Node.js returns the path as constructed, leaving a relative prefix relative
+	return tempPath;
 }
 
 /**
@@ -664,13 +687,7 @@ export function openSync(path: string, flags?: OpenMode, _mode?: Mode | null): F
 
 		return nova.fs.open(resolvedPath, novaMode);
 	} catch {
-		const error = new Error(`ENOENT: no such file or directory, open '${path}'`) as NodeJS.ErrnoException;
-
-		error.code = 'ENOENT';
-		error.errno = -2;
-		error.path = path;
-
-		throw error;
+		throw classify(path, 'open', getNovaMode(flags) !== 'r');
 	}
 }
 
@@ -685,47 +702,94 @@ export function closeSync(fd: FileBinaryMode | FileTextMode | number): void {
 
 /**
  * Read from file handle
+ *
+ * Nova's read takes only a size, but its files also expose seek, so position
+ * is honoured by seeking first. Text-mode handles hand back a string, which is
+ * encoded to UTF-8 so that the byte count returned means what Node.js means.
  */
 export function readSync(
 	fd: FileBinaryMode | FileTextMode | number,
-	_buffer?: NodeJS.ArrayBufferView,
-	_offset?: number | null,
-	_length?: number | null,
-	_position?: number | null,
+	buffer?: NodeJS.ArrayBufferView,
+	offset?: number | null,
+	length?: number | null,
+	position?: number | null,
 ): number {
 	if (!fd || typeof fd === 'number' || !('read' in fd) || typeof fd.read !== 'function') {
 		throw new Error('Invalid file descriptor');
 	}
 
-	// Nova's read doesn't support buffer/offset/length/position
-	// This is a simplified implementation
-	const content = fd.read();
+	const target = buffer ? new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength) : null;
+	const start = offset ?? 0;
+	const size = length ?? (target ? target.length - start : undefined);
 
-	if (content === null) return 0;
+	if (start < 0 || (size !== undefined && size < 0) || (target && start + (size ?? 0) > target.length)) {
+		throw new RangeError('The value of "offset" is out of range');
+	}
 
-	return typeof content === 'string' ? content.length : content.byteLength;
+	if (typeof position === 'number' && position >= 0) {
+		fd.seek(position);
+	}
+
+	const content = fd.read(size);
+
+	if (content === null || content === undefined) {
+		return 0;
+	}
+
+	const bytes = typeof content === 'string' ? encodeUtf8(content) : new Uint8Array(content);
+	const bytesRead = target ? Math.min(bytes.length, target.length - start) : bytes.length;
+
+	target?.set(bytes.subarray(0, bytesRead), start);
+
+	return bytesRead;
 }
 
 /**
  * Write to file handle
+ *
+ * Node.js overloads this as writeSync(fd, buffer, offset, length, position) and
+ * writeSync(fd, string, position, encoding), so the meaning of the third
+ * argument depends on what is being written.
  */
 export function writeSync(
 	fd: FileBinaryMode | FileTextMode | number,
 	buffer: NodeJS.ArrayBufferView | string,
-	_offset?: number | null,
-	_length?: number | null,
-	_position?: number | null,
+	offset?: number | null,
+	length?: number | null,
+	position?: number | null,
 ): number {
 	if (!fd || typeof fd === 'number' || !('write' in fd) || typeof fd.write !== 'function') {
 		throw new Error('Invalid file descriptor');
 	}
 
-	// Nova's write doesn't support buffer/offset/length/position
-	const content = String(buffer);
+	if (typeof buffer === 'string') {
+		// Third argument is the position in the string overload
+		if (typeof offset === 'number' && offset >= 0) {
+			fd.seek(offset);
+		}
 
-	fd.write(content);
+		fd.write(buffer);
 
-	return content.length;
+		// Node.js counts bytes written, which is not the string length
+		return encodeUtf8(buffer).length;
+	}
+
+	const bytes = new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength);
+	const start = offset ?? 0;
+	const size = length ?? bytes.length - start;
+
+	if (start < 0 || size < 0 || start + size > bytes.length) {
+		throw new RangeError('The value of "offset" is out of range');
+	}
+
+	if (typeof position === 'number' && position >= 0) {
+		fd.seek(position);
+	}
+
+	// slice copies into a standalone buffer, which is what Nova's write accepts
+	fd.write(bytes.slice(start, start + size).buffer as ArrayBuffer);
+
+	return size;
 }
 
 // ============================================================================
