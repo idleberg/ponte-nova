@@ -43,7 +43,7 @@ export default function ponteNova(
 
 	const plugins: Plugin[] = [];
 
-	if (options.skipNodeResolve !== true) {
+	if (options.skipNodeResolve) {
 		consola.warn(
 			'When skipping @rollup/plugin-node-resolve, you need to add it yourself to the plugins array of your build configuration. It must be added before the ponte-nova plugin and set preferBuiltins to false.',
 		);

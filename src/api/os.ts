@@ -2,7 +2,11 @@
  * OS module compatibility layer for Nova extensions
  * Maps Node.js os API to Nova-compatible implementations
  *
- * Nova only runs on macOS, so all values are macOS-specific
+ * Nova only runs on macOS, so all values are macOS-specific.
+ *
+ * Static system information (arch, hostname, cpus, etc.) is cached at module
+ * load time because Nova's Process API is async-only. The cache is populated
+ * eagerly when the module loads, so values are available synchronously.
  */
 
 // ============================================================================
@@ -10,37 +14,117 @@
 // ============================================================================
 
 /**
- * Execute a shell command and return its output
- * @param command - The shell command to execute
- * @returns The command output, trimmed
+ * Execute a shell command asynchronously
+ *
+ * Nova's Process API is async-only - there's no way to synchronously wait
+ * for process completion. This function properly uses onDidExit to wait
+ * for the process to finish.
  */
-function execSync(command: string): string {
-	// try {
-	const process = new Process('/usr/bin/env', {
-		args: ['sh', '-c', command],
-		shell: true,
+function exec(command: string): Promise<string> {
+	return new Promise((resolve) => {
+		try {
+			const process = new Process('/usr/bin/env', {
+				args: ['sh', '-c', command],
+				shell: true,
+			});
+
+			let output = '';
+
+			process.onStdout((line) => {
+				output += line;
+			});
+
+			process.onDidExit(() => {
+				resolve(output.trim());
+			});
+
+			process.start();
+		} catch {
+			resolve('');
+		}
 	});
+}
 
-	let output = '';
+// ============================================================================
+// Static System Info Cache
+// ============================================================================
 
-	process.onStdout((line) => {
-		output += line;
-	});
+/**
+ * Cache for static system information that doesn't change during runtime.
+ * Populated eagerly at module load time.
+ */
+const cache = {
+	arch: 'arm64', // Default fallback
+	hostname: '',
+	release: '',
+	version: '',
+	machine: '',
+	totalmem: 0,
+	cpuModel: 'Unknown',
+	cpuSpeed: 0,
+	cpuCount: 1,
+	bootTimestamp: 0,
+};
 
-	process.start();
+/**
+ * Initialize the cache with static system information.
+ * Called at module load time.
+ */
+async function initializeCache(): Promise<void> {
+	// Run all commands in parallel for faster initialization
+	const [
+		rosettaCheck,
+		unameM,
+		hostnameResult,
+		release,
+		version,
+		machine,
+		memsize,
+		cpuModel,
+		cpuFreq,
+		cpuCount,
+		bootTime,
+	] = await Promise.all([
+		exec('sysctl -in sysctl.proc_translated'),
+		exec('uname -m'),
+		exec('hostname'),
+		exec('uname -r'),
+		exec('uname -v'),
+		exec('sysctl -n hw.model'),
+		exec('sysctl -n hw.memsize'),
+		exec('sysctl -n machdep.cpu.brand_string'),
+		exec('sysctl -n hw.cpufrequency'),
+		exec('sysctl -n hw.logicalcpu'),
+		exec('sysctl -n kern.boottime'),
+	]);
 
-	// Wait for process to complete (with timeout)
-	let attempts = 0;
-	while (process.pid && attempts < 100) {
-		// Process is still running, wait a bit
-		attempts++;
+	// Determine architecture
+	if (rosettaCheck === '1') {
+		cache.arch = 'arm64';
+	} else if (unameM === 'arm64' || unameM === 'aarch64') {
+		cache.arch = 'arm64';
+	} else if (unameM === 'x86_64') {
+		cache.arch = 'x64';
 	}
 
-	return output.trim();
-	// } catch {
-	// 	return '';
-	// }
+	cache.hostname = hostnameResult || '';
+	cache.release = release;
+	cache.version = version;
+	cache.machine = machine;
+	cache.totalmem = memsize ? Number.parseInt(memsize, 10) : 0;
+	cache.cpuModel = cpuModel || 'Unknown';
+	cache.cpuSpeed = cpuFreq ? Math.round(Number.parseInt(cpuFreq, 10) / 1_000_000) : 0;
+	cache.cpuCount = cpuCount ? Number.parseInt(cpuCount, 10) : 1;
+
+	// Parse boot timestamp for uptime calculation
+	const bootMatch = bootTime.match(/sec\s*=\s*(\d+)/);
+	if (bootMatch?.[1]) {
+		cache.bootTimestamp = Number.parseInt(bootMatch[1], 10);
+	}
 }
+
+// Start cache initialization immediately when module loads
+initializeCache();
 
 // ============================================================================
 // Constants
@@ -71,62 +155,30 @@ export function type(): string {
 
 /**
  * Returns the operating system CPU architecture
- * Uses sysctl to detect if running under Rosetta translation
+ *
+ * Returns cached value populated at module load time.
+ * Uses sysctl to detect if running under Rosetta translation.
  */
 export function arch(): string {
-	// Check if running under Rosetta (Intel binary on Apple Silicon)
-	const rosettaArm = execSync('sysctl -in sysctl.proc_translated') === '1';
-
-	if (rosettaArm) {
-		return 'arm64';
-	}
-
-	// Get the actual architecture
-	const archOutput = execSync('uname -m');
-
-	// Map macOS architecture names to Node.js conventions
-	if (archOutput === 'arm64' || archOutput === 'aarch64') {
-		return 'arm64';
-	}
-
-	if (archOutput === 'x86_64') {
-		return 'x64';
-	}
-
-	// Fallback to arm64 for modern Macs
-	return 'arm64';
+	return cache.arch;
 }
 
 /**
  * Returns the operating system release version (kernel version)
- * Uses uname -r to get the Darwin kernel version
+ *
+ * Returns cached value populated at module load time.
  */
 export function release(): string {
-	return execSync('uname -r');
+	return cache.release;
 }
 
 /**
  * Returns the system hostname
- * Uses hostname command or constructs from LocalHostName
+ *
+ * Returns cached value populated at module load time.
  */
 export function hostname(): string {
-	// Try hostname command first (returns full hostname like "MacBook-Pro.local")
-	let name = execSync('hostname');
-
-	if (name) {
-		return name;
-	}
-
-	// Fallback to LocalHostName (Bonjour name) + .local
-	// LocalHostName is guaranteed to be hostname-safe (no spaces)
-	name = execSync('scutil --get LocalHostName');
-
-	if (name) {
-		return `${name}.local`;
-	}
-
-	// Last resort: empty string
-	return '';
+	return cache.hostname;
 }
 
 // ============================================================================
@@ -172,45 +224,30 @@ export function tmpdir(): string {
 
 /**
  * Returns the total amount of system memory in bytes
- * Uses sysctl to get hardware memory size
+ *
+ * Returns cached value populated at module load time.
  */
 export function totalmem(): number {
-	const memSize = execSync('sysctl -n hw.memsize');
-
-	return memSize ? Number.parseInt(memSize, 10) : 0;
+	return cache.totalmem;
 }
 
 /**
  * Returns the amount of free system memory in bytes
- * Uses vm_stat to get free and inactive memory pages
+ *
+ * NOT IMPLEMENTED: This value changes constantly and cannot be cached.
+ * Nova's Process API is async-only, so there's no way to fetch this
+ * value synchronously. Returns 0.
  */
 export function freemem(): number {
-	const vmStat = execSync('vm_stat');
-
-	if (!vmStat) {
-		return 0;
-	}
-
-	// Extract page size and free pages from vm_stat output
-	const pageSizeMatch = vmStat.match(/page size of (\d+) bytes/);
-	const freeMatch = vmStat.match(/Pages free:\s+(\d+)/);
-	const inactiveMatch = vmStat.match(/Pages inactive:\s+(\d+)/);
-
-	if (!pageSizeMatch?.[1] || !freeMatch?.[1]) {
-		return 0;
-	}
-
-	const pageSize = Number.parseInt(pageSizeMatch[1], 10);
-	const freePages = Number.parseInt(freeMatch[1], 10);
-	const inactivePages = inactiveMatch?.[1] ? Number.parseInt(inactiveMatch[1], 10) : 0;
-
-	// Free memory = (free pages + inactive pages) * page size
-	return (freePages + inactivePages) * pageSize;
+	console.warn('os.freemem() is not supported in Nova - returns 0. Use totalmem() for total memory.');
+	return 0;
 }
 
 /**
  * Returns an array of objects containing information about each CPU/core
- * Uses sysctl to get CPU information
+ *
+ * Returns cached values populated at module load time.
+ * Note: CPU times are always 0 as Nova doesn't expose this information.
  */
 export function cpus(): Array<{
 	model: string;
@@ -223,20 +260,9 @@ export function cpus(): Array<{
 		irq: number;
 	};
 }> {
-	const model = execSync('sysctl -n machdep.cpu.brand_string') || 'Unknown';
-	const cpuFreqStr = execSync('sysctl -n hw.cpufrequency');
-	const logicalCpuStr = execSync('sysctl -n hw.logicalcpu');
-
-	// Convert frequency from Hz to MHz
-	const speed = cpuFreqStr ? Math.round(Number.parseInt(cpuFreqStr, 10) / 1_000_000) : 0;
-	const count = logicalCpuStr ? Number.parseInt(logicalCpuStr, 10) : 1;
-
-	// Create an entry for each logical CPU
-	// Note: CPU times (user, nice, sys, idle, irq) are set to 0
-	// Getting accurate CPU time statistics would require parsing complex system tools
 	const cpuInfo = {
-		model: model.trim(),
-		speed,
+		model: cache.cpuModel.trim(),
+		speed: cache.cpuSpeed,
 		times: {
 			user: 0,
 			nice: 0,
@@ -246,36 +272,30 @@ export function cpus(): Array<{
 		},
 	};
 
-	return Array.from({ length: count }, () => ({ ...cpuInfo }));
+	return Array.from({ length: cache.cpuCount }, () => ({ ...cpuInfo }));
 }
 
 /**
  * Returns the system uptime in seconds
- * Uses sysctl to get boot time and calculates uptime
+ *
+ * Calculates uptime from cached boot timestamp (fetched at module load)
+ * and current time. This allows the value to update without async calls.
  */
 export function uptime(): number {
-	const bootTime = execSync('sysctl -n kern.boottime');
-
-	if (!bootTime) {
+	if (cache.bootTimestamp === 0) {
 		return 0;
 	}
 
-	// kern.boottime returns format like "{ sec = 1234567890, usec = 0 } ..."
-	const match = bootTime.match(/sec\s*=\s*(\d+)/);
-
-	if (!match?.[1]) {
-		return 0;
-	}
-
-	const bootTimestamp = Number.parseInt(match[1], 10);
 	const now = Math.floor(Date.now() / 1000);
-
-	return now - bootTimestamp;
+	return now - cache.bootTimestamp;
 }
 
 /**
  * Returns an array of objects containing information about network interfaces
- * Uses ifconfig to parse network interface information
+ *
+ * NOT IMPLEMENTED: Network interfaces can change during runtime and cannot
+ * be reliably cached. Nova's Process API is async-only, so there's no way
+ * to fetch this value synchronously. Returns empty object.
  */
 export function networkInterfaces(): Record<
 	string,
@@ -288,123 +308,20 @@ export function networkInterfaces(): Record<
 		cidr: string | null;
 	}>
 > {
-	const ifconfigOutput = execSync('ifconfig');
-
-	if (!ifconfigOutput) {
-		return {};
-	}
-
-	const interfaces: Record<
-		string,
-		Array<{
-			address: string;
-			netmask: string;
-			family: string;
-			mac: string;
-			internal: boolean;
-			cidr: string | null;
-		}>
-	> = {};
-
-	// Split by interface (lines that don't start with whitespace or tab)
-	const lines = ifconfigOutput.split('\n');
-	let currentInterface = '';
-	let currentMac = '';
-
-	for (const line of lines) {
-		// New interface starts (no leading whitespace)
-		if (line && !line.startsWith('\t') && !line.startsWith(' ')) {
-			const match = line.match(/^([^:]+):/);
-
-			if (match?.[1]) {
-				currentInterface = match[1];
-				currentMac = '';
-
-				if (!interfaces[currentInterface]) {
-					interfaces[currentInterface] = [];
-				}
-			}
-		} else if (currentInterface) {
-			// Parse MAC address (ether line)
-			const macMatch = line.match(/ether\s+([0-9a-f:]+)/i);
-			if (macMatch?.[1]) {
-				currentMac = macMatch[1];
-			}
-
-			// Parse IPv4 address
-			const inet4Match = line.match(/inet\s+(\d+\.\d+\.\d+\.\d+)\s+netmask\s+0x([0-9a-f]+)/i);
-			const interfaceArray = interfaces[currentInterface];
-
-			if (inet4Match?.[1] && inet4Match?.[2] && interfaceArray) {
-				const address = inet4Match[1];
-				const netmaskHex = inet4Match[2];
-
-				// Convert hex netmask to dotted decimal
-				const netmask =
-					netmaskHex
-						.match(/.{2}/g)
-						?.map((hex) => Number.parseInt(hex, 16))
-						.join('.') || '0.0.0.0';
-
-				// Calculate CIDR
-				const cidrBits = netmask.split('.').reduce((sum, octet) => {
-					return sum + Number.parseInt(octet, 10).toString(2).split('1').length - 1;
-				}, 0);
-				const cidr = `${address}/${cidrBits}`;
-
-				interfaceArray.push({
-					address,
-					netmask,
-					family: 'IPv4',
-					mac: currentMac || '00:00:00:00:00:00',
-					internal: currentInterface === 'lo0' || address.startsWith('127.'),
-					cidr,
-				});
-			}
-
-			// Parse IPv6 address
-			const inet6Match = line.match(/inet6\s+([0-9a-f:]+)(?:%\w+)?\s+prefixlen\s+(\d+)/i);
-			const interfaceArray6 = interfaces[currentInterface];
-
-			if (inet6Match?.[1] && inet6Match?.[2] && interfaceArray6) {
-				const address = inet6Match[1];
-				const prefixLen = inet6Match[2];
-				const cidr = `${address}/${prefixLen}`;
-
-				interfaceArray6.push({
-					address,
-					netmask: 'ffff:ffff:ffff:ffff::',
-					family: 'IPv6',
-					mac: currentMac || '00:00:00:00:00:00',
-					internal: currentInterface === 'lo0' || address === '::1' || address.startsWith('fe80:'),
-					cidr,
-				});
-			}
-		}
-	}
-
-	return interfaces;
+	console.warn('os.networkInterfaces() is not supported in Nova - returns empty object.');
+	return {};
 }
 
 /**
  * Returns an array containing the 1, 5, and 15 minute load averages
- * Uses sysctl to get system load averages
+ *
+ * NOT IMPLEMENTED: Load averages change constantly and cannot be cached.
+ * Nova's Process API is async-only, so there's no way to fetch this
+ * value synchronously. Returns [0, 0, 0].
  */
 export function loadavg(): [number, number, number] {
-	const loadavgStr = execSync('sysctl -n vm.loadavg');
-
-	if (!loadavgStr) {
-		return [0, 0, 0];
-	}
-
-	// vm.loadavg returns format like "{ 1.23 2.34 3.45 }"
-	const match = loadavgStr.match(/\{\s*([\d.]+)\s+([\d.]+)\s+([\d.]+)/);
-
-	if (!match) {
-		return [0, 0, 0];
-	}
-
-	return [Number.parseFloat(match[1] || '0'), Number.parseFloat(match[2] || '0'), Number.parseFloat(match[3] || '0')];
+	console.warn('os.loadavg() is not supported in Nova - returns [0, 0, 0].');
+	return [0, 0, 0];
 }
 
 /**
@@ -427,7 +344,9 @@ export function setPriority(_pidOrPriority: number, _priority?: number): void {
 
 /**
  * Returns information about the currently effective user
- * Uses id command to get uid/gid and environment variables for other info
+ *
+ * Uses Nova's environment variables for username, homedir, and shell.
+ * UID and GID return -1 as they require async process execution.
  */
 export function userInfo(_options?: { encoding: BufferEncoding }): {
 	uid: number;
@@ -436,16 +355,9 @@ export function userInfo(_options?: { encoding: BufferEncoding }): {
 	homedir: string;
 	shell: string | null;
 } {
-	// Get UID and GID from id command
-	const uidStr = execSync('id -u');
-	const gidStr = execSync('id -g');
-
-	const uid = uidStr ? Number.parseInt(uidStr, 10) : -1;
-	const gid = gidStr ? Number.parseInt(gidStr, 10) : -1;
-
 	return {
-		uid,
-		gid,
+		uid: -1,
+		gid: -1,
 		username: nova.environment.USER || '',
 		homedir: homedir(),
 		shell: nova.environment.SHELL || null,
@@ -480,18 +392,20 @@ export function endianness(): 'BE' | 'LE' {
 
 /**
  * Returns a string identifying the kernel version
- * Uses uname -v to get the full kernel version string
+ *
+ * Returns cached value populated at module load time.
  */
 export function version(): string {
-	return execSync('uname -v');
+	return cache.version;
 }
 
 /**
  * Returns the machine type (hardware model)
- * Uses sysctl to get the hardware model identifier
+ *
+ * Returns cached value populated at module load time.
  */
 export function machine(): string {
-	return execSync('sysctl -n hw.model');
+	return cache.machine;
 }
 
 // ============================================================================

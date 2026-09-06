@@ -93,6 +93,18 @@ export const constants = {
 // ============================================================================
 
 /**
+ * Defer a callback to the next tick of the event loop
+ *
+ * Node.js uses setImmediate to invoke fs callbacks asynchronously, but Nova
+ * only provides setTimeout/setInterval. A zero-delay timeout is the closest
+ * equivalent: like setImmediate, it runs as a macrotask after the current
+ * synchronous execution completes.
+ */
+function defer(callback: () => void): void {
+	setTimeout(callback, 0);
+}
+
+/**
  * Convert Nova FileStats to Node.js Stats object
  */
 function convertStats(novaStats: FileStats): Stats {
@@ -740,9 +752,9 @@ export function readFile(
 	try {
 		const result = readFileSync(path, opts);
 
-		setImmediate(() => cb(null, result));
+		defer(() => cb(null, result));
 	} catch (err) {
-		setImmediate(() => cb(err as NodeJS.ErrnoException));
+		defer(() => cb(err as NodeJS.ErrnoException));
 	}
 }
 
@@ -776,9 +788,9 @@ export function writeFile(
 
 	try {
 		writeFileSync(path, data, opts);
-		setImmediate(() => cb(null));
+		defer(() => cb(null));
 	} catch (err) {
-		setImmediate(() => cb(err as NodeJS.ErrnoException));
+		defer(() => cb(err as NodeJS.ErrnoException));
 	}
 }
 
@@ -812,9 +824,9 @@ export function appendFile(
 
 	try {
 		appendFileSync(path, data, opts);
-		setImmediate(() => cb(null));
+		defer(() => cb(null));
 	} catch (err) {
-		setImmediate(() => cb(err as NodeJS.ErrnoException));
+		defer(() => cb(err as NodeJS.ErrnoException));
 	}
 }
 
@@ -843,9 +855,9 @@ export function stat(
 	try {
 		const result = statSync(path, opts);
 
-		setImmediate(() => cb(null, result));
+		defer(() => cb(null, result));
 	} catch (err) {
-		setImmediate(() => cb(err as NodeJS.ErrnoException));
+		defer(() => cb(err as NodeJS.ErrnoException));
 	}
 }
 
@@ -873,9 +885,9 @@ export function lstat(
 
 	try {
 		const result = lstatSync(path, opts);
-		setImmediate(() => cb(null, result));
+		defer(() => cb(null, result));
 	} catch (err) {
-		setImmediate(() => cb(err as NodeJS.ErrnoException));
+		defer(() => cb(err as NodeJS.ErrnoException));
 	}
 }
 
@@ -903,9 +915,9 @@ export function mkdir(
 
 	try {
 		mkdirSync(path, opts);
-		setImmediate(() => cb(null));
+		defer(() => cb(null));
 	} catch (err) {
-		setImmediate(() => cb(err as NodeJS.ErrnoException));
+		defer(() => cb(err as NodeJS.ErrnoException));
 	}
 }
 
@@ -934,18 +946,18 @@ export function readdir(
 		} else {
 			result = readdirSync(path, { encoding: opts?.encoding, withFileTypes: false });
 		}
-		setImmediate(() => cb(null, result));
+		defer(() => cb(null, result));
 	} catch (err) {
-		setImmediate(() => cb(err as NodeJS.ErrnoException));
+		defer(() => cb(err as NodeJS.ErrnoException));
 	}
 }
 
 export function unlink(path: string, callback: (err: NodeJS.ErrnoException | null) => void): void {
 	try {
 		unlinkSync(path);
-		setImmediate(() => callback(null));
+		defer(() => callback(null));
 	} catch (err) {
-		setImmediate(() => callback(err as NodeJS.ErrnoException));
+		defer(() => callback(err as NodeJS.ErrnoException));
 	}
 }
 
@@ -969,9 +981,9 @@ export function rmdir(
 
 	try {
 		rmdirSync(path, opts);
-		setImmediate(() => cb(null));
+		defer(() => cb(null));
 	} catch (err) {
-		setImmediate(() => cb(err as NodeJS.ErrnoException));
+		defer(() => cb(err as NodeJS.ErrnoException));
 	}
 }
 
@@ -995,18 +1007,18 @@ export function rm(
 
 	try {
 		rmSync(path, opts);
-		setImmediate(() => cb(null));
+		defer(() => cb(null));
 	} catch (err) {
-		setImmediate(() => cb(err as NodeJS.ErrnoException));
+		defer(() => cb(err as NodeJS.ErrnoException));
 	}
 }
 
 export function rename(oldPath: string, newPath: string, callback: (err: NodeJS.ErrnoException | null) => void): void {
 	try {
 		renameSync(oldPath, newPath);
-		setImmediate(() => callback(null));
+		defer(() => callback(null));
 	} catch (err) {
-		setImmediate(() => callback(err as NodeJS.ErrnoException));
+		defer(() => callback(err as NodeJS.ErrnoException));
 	}
 }
 
@@ -1036,9 +1048,9 @@ export function copyFile(
 
 	try {
 		copyFileSync(src, dest, flags);
-		setImmediate(() => cb(null));
+		defer(() => cb(null));
 	} catch (err) {
-		setImmediate(() => cb(err as NodeJS.ErrnoException));
+		defer(() => cb(err as NodeJS.ErrnoException));
 	}
 }
 
@@ -1068,9 +1080,9 @@ export function cp(
 
 	try {
 		cpSync(src, dest, opts);
-		setImmediate(() => cb(null));
+		defer(() => cb(null));
 	} catch (err) {
-		setImmediate(() => cb(err as NodeJS.ErrnoException));
+		defer(() => cb(err as NodeJS.ErrnoException));
 	}
 }
 
@@ -1094,9 +1106,9 @@ export function access(
 
 	try {
 		accessSync(path, accessMode);
-		setImmediate(() => cb(null));
+		defer(() => cb(null));
 	} catch (err) {
-		setImmediate(() => cb(err as NodeJS.ErrnoException));
+		defer(() => cb(err as NodeJS.ErrnoException));
 	}
 }
 
@@ -1131,9 +1143,9 @@ export function realpath(
 
 	try {
 		const result = realpathSync(path, opts);
-		setImmediate(() => cb(null, result));
+		defer(() => cb(null, result));
 	} catch (err) {
-		setImmediate(() => cb(err as NodeJS.ErrnoException));
+		defer(() => cb(err as NodeJS.ErrnoException));
 	}
 }
 
@@ -1165,9 +1177,9 @@ export function mkdtemp(
 
 	try {
 		const result = mkdtempSync(prefix, opts);
-		setImmediate(() => cb(null, result));
+		defer(() => cb(null, result));
 	} catch (err) {
-		setImmediate(() => cb(err as NodeJS.ErrnoException));
+		defer(() => cb(err as NodeJS.ErrnoException));
 	}
 }
 
@@ -1201,9 +1213,9 @@ export function open(
 
 	try {
 		const result = openSync(path, flags, fileMode);
-		setImmediate(() => cb(null, result));
+		defer(() => cb(null, result));
 	} catch (err) {
-		setImmediate(() => cb(err as NodeJS.ErrnoException));
+		defer(() => cb(err as NodeJS.ErrnoException));
 	}
 }
 
@@ -1213,9 +1225,9 @@ export function close(
 ): void {
 	try {
 		closeSync(fd);
-		setImmediate(() => callback(null));
+		defer(() => callback(null));
 	} catch (err) {
-		setImmediate(() => callback(err as NodeJS.ErrnoException));
+		defer(() => callback(err as NodeJS.ErrnoException));
 	}
 }
 
@@ -1229,9 +1241,9 @@ export function read(
 ): void {
 	try {
 		const bytesRead = readSync(fd, buffer, offset, length, position);
-		setImmediate(() => callback(null, bytesRead, buffer));
+		defer(() => callback(null, bytesRead, buffer));
 	} catch (err) {
-		setImmediate(() => callback(err as NodeJS.ErrnoException));
+		defer(() => callback(err as NodeJS.ErrnoException));
 	}
 }
 
@@ -1245,9 +1257,9 @@ export function write(
 ): void {
 	try {
 		const bytesWritten = writeSync(fd, buffer, offset, length, position);
-		setImmediate(() => callback(null, bytesWritten, buffer));
+		defer(() => callback(null, bytesWritten, buffer));
 	} catch (err) {
-		setImmediate(() => callback(err as NodeJS.ErrnoException));
+		defer(() => callback(err as NodeJS.ErrnoException));
 	}
 }
 
