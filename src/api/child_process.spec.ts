@@ -54,6 +54,13 @@ Object.assign(globalThis, {
 				// The stub's cwd is this repository, not the fictional extension path
 				cwd: options.cwd?.startsWith('/Users/example') ? process.cwd() : options.cwd,
 				env: options.env,
+				// Its own process group, so terminating takes the whole tree with it.
+				// Whether `sh -c` execs its command or forks a child is up to the
+				// shell, and a forked grandchild outlives a signal sent to the shell
+				// alone while still holding the stdout pipe open - which means Node
+				// never reports the process as closed. Nova has no such gap: it
+				// reports the process it launched as exited when it exits.
+				detached: true,
 			});
 
 			this.pid = this.#child.pid;
@@ -97,12 +104,25 @@ Object.assign(globalThis, {
 			];
 		}
 
+		/** Signal the whole group, falling back to the process on its own */
+		#kill(signal: NodeJS.Signals): void {
+			if (!this.#child?.pid) {
+				return;
+			}
+
+			try {
+				process.kill(-this.#child.pid, signal);
+			} catch {
+				this.#child.kill(signal);
+			}
+		}
+
 		terminate(): void {
-			this.#child?.kill('SIGTERM');
+			this.#kill('SIGTERM');
 		}
 
 		signal(value: string): void {
-			this.#child?.kill(value as NodeJS.Signals);
+			this.#kill(value as NodeJS.Signals);
 		}
 	},
 });
@@ -172,7 +192,11 @@ describe('exec', () => {
 	});
 
 	it('kills a child that outlives its timeout', async () => {
-		const error = await execAsync('sleep 5', { timeout: 100 }).then(
+		// Two commands rather than one, so the shell has to fork rather than exec
+		// itself into sleep. That is the harder case - the one where a signal to
+		// the shell alone would leave the sleep running - and which of the two a
+		// bare `sleep 5` produces is up to whichever /bin/sh the machine has
+		const error = await execAsync('sleep 5; true', { timeout: 100 }).then(
 			() => null,
 			(failure) => failure,
 		);
